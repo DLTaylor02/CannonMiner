@@ -1,8 +1,8 @@
 # CannonMiner
 
-I run a custom-built Cannonball routing platform that models real-world traffic variability instead of chasing average speed. It evaluates all viable route segments between endpoints, penalizes high-variance traffic behavior, and selects routes and departure times that are statistically least likely to experience delay at a target cruising speed. The result is a risk-optimized route designed for consistency under real conditions.
+For a trip from the Redball Garage in New York to the Portofino Marina Hotel in Los Angeles, which route/departure pair gives the fastest arrival while keeping the risk of a costly delay acceptably low?
 
-It doesn’t find the fastest route — it finds the one you’re least likely to lose time on.
+I run a custom-built Cannonball routing platform that models real-world traffic variability instead of chasing average speed. It evaluates all viable route segments between endpoints, penalizes high-variance traffic behavior, and selects routes and departure times that are statistically least likely to experience delay at a target cruising speed. The result is a risk-optimized route designed for consistency under real conditions.
 
 ## Setup
 
@@ -68,14 +68,18 @@ python collect_forecast.py <year> <numbericMonth>
 
 12. Run the router.py to analyse the data
 Modes:
-    earliest_arrival        -> Minimize arrival timestamp
-    fastest_route           -> Minimize predicted duration
-    maximum_reliability     -> Minimize variance (high confidence but ignores real world cronology)
+    default           -> Balanced
+    fastest           -> Minimize predicted duration
+    reliability       -> Minimize variance (high confidence but ignores real world cronology)
 ```shell
 cd ~/projects/cannonminer
 source ~/projects/cannonminer/venv/bin/activate
 python router.py <startlocation> <endlocation> <avgmph>
 ```
+
+## Default Segments
+
+![CannonMiner route segments](Docs/Segments.png)
 
 ## Dev Todos
 

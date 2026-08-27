@@ -1,124 +1,104 @@
 #!/usr/bin/env python3
-"""
-router.py
+"""Find a fast route and departure time with a quantified delay risk.
 
-Created by OpenAI ChatGPT Plus and Dean Taylor 2025
+Examples:
+  python router.py redball portofino 110
+  python router.py redball portofino 110 --profile reliability
+  python router.py redball portofino 110 --profile balanced --max-delay-risk 0.15
 
-Usage:
-  python router.py start end speed_mph
+The requested average speed establishes the no-delay travel time. The router
+uses recorded traffic delay (``duration_in_traffic - duration``) to predict
+the additional delay at each segment's estimated arrival time. Sparse buckets
+are deliberately shrunk toward all-time segment behaviour rather than being
+treated as certain.
 """
 
 from __future__ import annotations
 
-import sys
-import math
 import argparse
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Tuple, Optional
+from itertools import islice
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import networkx as nx
-from tqdm import tqdm
-from pydantic import BaseModel, Field
-from tenacity import retry, stop_after_attempt, wait_exponential_jitter
-
+import numpy as np
 from psycopg import connect
 from psycopg.rows import dict_row
+from psycopg.sql import Identifier, SQL
+from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+from tqdm import tqdm
 
 from db_config import DB_CONN_STRING
 
 
-# ============================================================
-# Models
-# ============================================================
-
-class SegmentSample(BaseModel):
-    collected_at: datetime
-    duration_seconds: float = Field(ge=0)
-    duration_in_traffic_seconds: float = Field(ge=0)
-    distance_meters: float = Field(gt=0)
+METER_PER_MILE = 1609.344
+P90_Z_SCORE = 1.281551565545
 
 
 @dataclass(frozen=True)
-class SegmentKey:
-    table: str
+class Segment:
+    name: str
     start: str
     end: str
 
 
-@dataclass
-class SegmentStats:
-    count: int
-    distance_meters_median: float
-    traffic_mean_s: float
-    traffic_std_s: float
-    traffic_cv: float
-    reliability_0_1: float
+@dataclass(frozen=True)
+class Sample:
+    collected_at: datetime
+    duration_seconds: float
+    traffic_seconds: float
+    distance_meters: float
 
 
-@dataclass
-class RouteEval:
-    segments: List[SegmentKey]
-    supporting_samples_total: int
+@dataclass(frozen=True)
+class SegmentPrediction:
+    mean_delay_seconds: float
+    std_delay_seconds: float
+    distance_meters: float
+    nearby_samples: int
+    total_samples: int
+    confidence: float
+    delay_probability: float
+
+
+@dataclass(frozen=True)
+class RouteEvaluation:
+    segments: Sequence[Segment]
+    departure: datetime
+    expected_seconds: float
+    p90_seconds: float
+    delay_risk: float
+    confidence: float
     total_distance_meters: float
-    predicted_travel_seconds: float
-    best_departure: datetime
-    confidence_0_1: float
-    route_reliability_0_1: float
-    route_alignment_0_1: float
+    supporting_samples: int
 
 
-# ============================================================
-# Helpers
-# ============================================================
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-METER_PER_MILE = 1609.344
 
-def meters_to_miles(m: float) -> float:
-    return m / METER_PER_MILE
+def meters_to_miles(meters: float) -> float:
+    return meters / METER_PER_MILE
 
 
 def mph_to_mps(mph: float) -> float:
-    return (mph * METER_PER_MILE) / 3600.0
+    return mph * METER_PER_MILE / 3600.0
 
 
-def format_hhmmss(seconds: float) -> str:
-    s = int(round(seconds))
-    h = s // 3600
-    m = (s % 3600) // 60
-    s = s % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
+def ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
-
-def ensure_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-    
-def format_seconds_readable(seconds: float) -> str:
-    seconds = int(round(seconds))
-    m, s = divmod(seconds, 60)
-    h, m = divmod(m, 60)
-    if h > 0:
-        return f"{h:02d}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"
-    
-EST = ZoneInfo("America/New_York")
-
-def to_est(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        # assume UTC if naive
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(EST)
-
-# ============================================================
-# DB Access (psycopg3 safe)
-# ============================================================
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential_jitter(0.5, 5))
-def db_fetchall(query: str, params: Tuple = ()) -> List[dict]:
+def db_fetchall(query, params: Tuple = ()) -> List[dict]:
     with connect(DB_CONN_STRING, row_factory=dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -126,310 +106,339 @@ def db_fetchall(query: str, params: Tuple = ()) -> List[dict]:
 
 
 def list_segment_tables() -> List[str]:
-    q = """
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = 'public'
-      AND table_type = 'BASE TABLE'
-      AND (
-            LEFT(table_name, 8) = 'segment_'
-         OR LEFT(table_name, 16) = 'segmentestimate_'
-      )
-    ORDER BY table_name;
-    """
-    rows = db_fetchall(q)
-    return [r["table_name"] for r in rows]
+    rows = db_fetchall(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+          AND (LEFT(table_name, 8) = 'segment_' OR
+               LEFT(table_name, 16) = 'segmentestimate_')
+        ORDER BY table_name
+        """
+    )
+    return [row["table_name"] for row in rows]
 
 
-def load_samples(table: str) -> List[SegmentSample]:
-    q = f"""
-    SELECT collected_at, duration_seconds, duration_in_traffic_seconds, distance_meters
-    FROM public.{table}
-    WHERE collected_at IS NOT NULL
-      AND duration_seconds IS NOT NULL
-      AND duration_in_traffic_seconds IS NOT NULL
-      AND distance_meters IS NOT NULL
-    ORDER BY collected_at;
-    """
-    rows = db_fetchall(q)
-    out: List[SegmentSample] = []
-    for r in rows:
-        try:
-            out.append(
-                SegmentSample(
-                    collected_at=ensure_utc(r["collected_at"]),
-                    duration_seconds=float(r["duration_seconds"]),
-                    duration_in_traffic_seconds=float(r["duration_in_traffic_seconds"]),
-                    distance_meters=float(r["distance_meters"]),
-                )
-            )
-        except Exception:
-            pass
-    return out
-
-
-# ============================================================
-# Graph / Stats
-# ============================================================
-
-def parse_segment_name(table: str) -> Optional[SegmentKey]:
+def parse_segment_table(table: str) -> Optional[Segment]:
     if table.startswith("segmentestimate_"):
-        rest = table[len("segmentestimate_") :]
+        name = table[len("segmentestimate_"):]
     elif table.startswith("segment_"):
-        rest = table[len("segment_") :]
+        name = table[len("segment_"):]
     else:
         return None
-
-    if "_to_" not in rest:
+    if "_to_" not in name:
         return None
+    start, end = name.split("_to_", 1)
+    return Segment(name=name, start=start, end=end)
 
-    start, end = rest.split("_to_", 1)
-    return SegmentKey(table=table, start=start, end=end)
+
+def load_samples(table: str) -> List[Sample]:
+    """Load a table whose name came from PostgreSQL metadata, safely quoted."""
+    query = SQL("""
+        SELECT collected_at, duration_seconds, duration_in_traffic_seconds, distance_meters
+        FROM public.{table}
+        WHERE collected_at IS NOT NULL
+          AND duration_in_traffic_seconds IS NOT NULL
+          AND duration_in_traffic_seconds > 0
+          AND duration_seconds IS NOT NULL
+          AND duration_seconds > 0
+          AND distance_meters IS NOT NULL
+          AND distance_meters > 0
+        ORDER BY collected_at
+    """).format(table=Identifier(table))
+    rows = db_fetchall(query)
+    samples: List[Sample] = []
+    for row in rows:
+        try:
+            samples.append(
+                Sample(
+                    collected_at=ensure_utc(row["collected_at"]),
+                    duration_seconds=float(row["duration_seconds"]),
+                    traffic_seconds=float(row["duration_in_traffic_seconds"]),
+                    distance_meters=float(row["distance_meters"]),
+                )
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+    return samples
 
 
-def compute_stats(samples: List[SegmentSample]) -> SegmentStats:
+def load_segment_samples() -> Dict[Segment, List[Sample]]:
+    """Combine observed and forecast tables for the same logical segment."""
+    grouped: Dict[Segment, List[Sample]] = {}
+    tables = list_segment_tables()
+    for table in tqdm(tables, desc="Loading segment tables", unit="table"):
+        segment = parse_segment_table(table)
+        if segment is not None:
+            grouped.setdefault(segment, []).extend(load_samples(table))
+    return grouped
+
+
+def median_distance(samples: Sequence[Sample]) -> float:
+    return float(np.median([sample.distance_meters for sample in samples]))
+
+
+def build_graph(segment_samples: Dict[Segment, List[Sample]], target_mph: float) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    for segment, samples in segment_samples.items():
+        if samples:
+            graph.add_edge(
+                segment.start,
+                segment.end,
+                segment=segment,
+                # Candidate routes are bounded, so use target-speed travel time
+                # plus typical measured congestion delay as the initial ranking.
+                weight=(median_distance(samples) / mph_to_mps(target_mph)
+                        + float(np.mean([max(0.0, sample.traffic_seconds - sample.duration_seconds)
+                                         for sample in samples]))),
+            )
+    return graph
+
+
+def circular_minute_distance(first: datetime, second: datetime) -> int:
+    first_minute = first.hour * 60 + first.minute
+    second_minute = second.hour * 60 + second.minute
+    difference = abs(first_minute - second_minute)
+    return min(difference, 24 * 60 - difference)
+
+
+def month_distance(first: datetime, second: datetime) -> int:
+    difference = abs(first.month - second.month)
+    return min(difference, 12 - difference)
+
+
+def prediction_for(
+    samples: Sequence[Sample], arrival: datetime, trip_timezone: ZoneInfo
+) -> SegmentPrediction:
+    """Predict a segment at arrival using recurring local traffic patterns."""
     if not samples:
-        return SegmentStats(0, float("nan"), float("nan"), float("nan"), float("inf"), 0.0)
+        raise ValueError("Cannot predict a segment with no valid samples")
 
-    traffic = np.array([s.duration_in_traffic_seconds for s in samples])
-    dist = np.array([s.distance_meters for s in samples])
+    local_arrival = arrival.astimezone(trip_timezone)
+    # The requested Cannonball pace is the baseline. Historic API data supplies
+    # only the congestion penalty, which remains meaningful at a higher pace.
+    values = np.asarray(
+        [max(0.0, sample.traffic_seconds - sample.duration_seconds) for sample in samples],
+        dtype=float,
+    )
+    distances = np.asarray([sample.distance_meters for sample in samples], dtype=float)
+    global_mean = float(np.mean(values))
+    global_std = max(float(np.std(values)), 30.0)
+    global_delay_probability = float(np.mean(values > 0))
 
-    mean = float(np.mean(traffic))
-    std = float(np.std(traffic))
-    cv = std / mean if mean > 0 else float("inf")
-    reliability = 1.0 / (1.0 + cv)
+    weighted_values: List[float] = []
+    weights: List[float] = []
+    for sample in samples:
+        observed = sample.collected_at.astimezone(trip_timezone)
+        minute_gap = circular_minute_distance(observed, local_arrival)
+        if observed.weekday() != local_arrival.weekday() or minute_gap > 90:
+            continue
+        time_weight = math.exp(-minute_gap / 45.0)
+        season_weight = 1.0 if month_distance(observed, local_arrival) <= 1 else 0.35
+        weighted_values.append(max(0.0, sample.traffic_seconds - sample.duration_seconds))
+        weights.append(time_weight * season_weight)
 
-    return SegmentStats(
-        count=len(samples),
-        distance_meters_median=float(np.median(dist)),
-        traffic_mean_s=mean,
-        traffic_std_s=std,
-        traffic_cv=cv,
-        reliability_0_1=float(np.clip(reliability, 0.0, 1.0)),
+    nearby_count = len(weighted_values)
+    if nearby_count:
+        nearby = np.asarray(weighted_values, dtype=float)
+        nearby_weights = np.asarray(weights, dtype=float)
+        local_mean = float(np.average(nearby, weights=nearby_weights))
+        local_std = max(
+            float(np.sqrt(np.average((nearby - local_mean) ** 2, weights=nearby_weights))),
+            30.0,
+        )
+        local_delay_probability = float(np.average(nearby > 0, weights=nearby_weights))
+    else:
+        local_mean, local_std = global_mean, global_std
+        local_delay_probability = global_delay_probability
+
+    # Ten relevant observations make the local pattern dominant.
+    local_share = nearby_count / (nearby_count + 10.0)
+    mean = local_share * local_mean + (1.0 - local_share) * global_mean
+    variance = local_share * local_std ** 2 + (1.0 - local_share) * global_std ** 2
+    confidence = (1.0 - math.exp(-nearby_count / 8.0)) * (1.0 - math.exp(-len(samples) / 30.0))
+
+    return SegmentPrediction(
+        mean_delay_seconds=mean,
+        std_delay_seconds=math.sqrt(variance),
+        distance_meters=float(np.median(distances)),
+        nearby_samples=nearby_count,
+        total_samples=len(samples),
+        confidence=confidence,
+        delay_probability=(local_share * local_delay_probability
+                           + (1.0 - local_share) * global_delay_probability),
     )
 
 
-def build_graph(segments: List[SegmentKey], stats: Dict[str, SegmentStats]) -> nx.DiGraph:
-    G = nx.DiGraph()
-    for s in segments:
-        st = stats.get(s.table)
-        if not st or not math.isfinite(st.distance_meters_median):
-            continue
-        G.add_edge(s.start, s.end, table=s.table, weight=st.distance_meters_median)
-    return G
-
-
-# ============================================================
-# Routing / Evaluation
-# ============================================================
-
-def predicted_seconds(dist_m: float, mph: float) -> float:
-    return dist_m / mph_to_mps(mph)
-
-
-def first_ge(times: List[datetime], t: datetime) -> int:
-    lo, hi = 0, len(times)
-    while lo < hi:
-        mid = (lo + hi) // 2
-        if times[mid] < t:
-            lo = mid + 1
-        else:
-            hi = mid
-    return lo
-
-
-def chain_alignment(
-    route: List[SegmentKey],
-    samples_by_table: Dict[str, List[SegmentSample]],
-    stats: Dict[str, SegmentStats],
-    speed_mph: float,
+def evaluate_route(
+    route: Sequence[Segment],
     departure: datetime,
-) -> Optional[float]:
+    segment_samples: Dict[Segment, List[Sample]],
+    trip_timezone: ZoneInfo,
+    target_mph: float,
+    prediction_cache: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction],
+) -> RouteEvaluation:
+    arrival = departure
+    expected_seconds = 0.0
+    variance_seconds = 0.0
+    total_distance = 0.0
+    confidences: List[float] = []
+    no_delay_probability = 1.0
+    support = 0
 
-    t = departure
-    gaps: List[float] = []
-
-    for i, seg in enumerate(route):
-        samples = samples_by_table[seg.table]
-        times = [s.collected_at for s in samples]
-        dist = stats[seg.table].distance_meters_median
-
-        if i > 0:
-            idx = first_ge(times, t)
-            if idx >= len(times):
-                return None
-            gap = (times[idx] - t).total_seconds()
-            gaps.append(max(0.0, gap))
-            t = times[idx]
-
-        t += timedelta(seconds=predicted_seconds(dist, speed_mph))
-
-    if not gaps:
-        return 1.0
-    return float(np.mean([math.exp(-g / 3600.0) for g in gaps]))
-
-
-def evaluate_route_best_departure(
-    route: List[SegmentKey],
-    samples_by_table: Dict[str, List[SegmentSample]],
-    stats: Dict[str, SegmentStats],
-    speed_mph: float,
-) -> Optional[RouteEval]:
-
-    first_samples = samples_by_table.get(route[0].table, [])
-    if not first_samples:
-        return None
-
-    departures = [s.collected_at for s in first_samples]
-
-    weights = []
-    reliabilities = []
-    for seg in route:
-        st = stats[seg.table]
-        weights.append(st.distance_meters_median)
-        reliabilities.append(st.reliability_0_1)
-
-    route_reliability = float(np.average(reliabilities, weights=weights))
-    total_dist = sum(weights)
-    predicted_total = sum(predicted_seconds(d, speed_mph) for d in weights)
-    supporting = sum(stats[s.table].count for s in route)
-
-    best: Optional[RouteEval] = None
-
-    for depart in tqdm(
-        departures,
-        desc="  Departures",
-        leave=False,
-        unit="departure",
-    ):
-        alignment = chain_alignment(route, samples_by_table, stats, speed_mph, depart)
-        if alignment is None:
-            continue
-
-        confidence = 0.85 * route_reliability + 0.15 * alignment
-
-        ev = RouteEval(
-            segments=route,
-            supporting_samples_total=supporting,
-            total_distance_meters=total_dist,
-            predicted_travel_seconds=predicted_total,
-            best_departure=depart,
-            confidence_0_1=confidence,
-            route_reliability_0_1=route_reliability,
-            route_alignment_0_1=alignment,
+    for segment in route:
+        local_arrival = arrival.astimezone(trip_timezone)
+        bucket_minute = (local_arrival.minute // 30) * 30
+        cache_key = (
+            segment,
+            local_arrival.weekday(),
+            local_arrival.month,
+            local_arrival.hour,
+            bucket_minute,
         )
+        prediction = prediction_cache.get(cache_key)
+        if prediction is None:
+            bucketed_arrival = local_arrival.replace(minute=bucket_minute, second=0, microsecond=0)
+            prediction = prediction_for(segment_samples[segment], bucketed_arrival, trip_timezone)
+            prediction_cache[cache_key] = prediction
+        target_speed_seconds = prediction.distance_meters / mph_to_mps(target_mph)
+        expected_seconds += target_speed_seconds + prediction.mean_delay_seconds
+        variance_seconds += prediction.std_delay_seconds ** 2
+        total_distance += prediction.distance_meters
+        confidences.append(prediction.confidence)
+        no_delay_probability *= 1.0 - prediction.delay_probability
+        support += prediction.nearby_samples
+        arrival += timedelta(seconds=target_speed_seconds + prediction.mean_delay_seconds)
 
-        if not best or ev.confidence_0_1 > best.confidence_0_1:
-            best = ev
+    std_seconds = math.sqrt(variance_seconds)
+    p90_seconds = expected_seconds + P90_Z_SCORE * std_seconds
+    # At least one segment experiences a measured traffic penalty. This is a
+    # conservative independence approximation and is easier to act on than an
+    # arbitrary “30 minutes late” threshold.
+    delay_risk = 1.0 - no_delay_probability
+    return RouteEvaluation(
+        segments=route,
+        departure=departure,
+        expected_seconds=expected_seconds,
+        p90_seconds=p90_seconds,
+        delay_risk=delay_risk,
+        confidence=min(confidences) if confidences else 0.0,
+        total_distance_meters=total_distance,
+        supporting_samples=support,
+    )
 
-    return best
 
-
-def route_str(route: List[SegmentKey]) -> str:
-    return " -> ".join(s.table for s in route)
-
-
-def pick_min_distance_route(G: nx.DiGraph, start: str, end: str) -> Optional[List[SegmentKey]]:
+def candidate_routes(
+    graph: nx.DiGraph, start: str, end: str, limit: int
+) -> Iterable[List[Segment]]:
     try:
-        nodes = nx.shortest_path(G, start, end, weight="weight")
-    except Exception:
-        return None
-    return [SegmentKey(G[u][v]["table"], u, v) for u, v in zip(nodes[:-1], nodes[1:])]
+        node_paths = nx.shortest_simple_paths(graph, start, end, weight="weight")
+        for nodes in islice(node_paths, limit):
+            yield [graph[first][second]["segment"] for first, second in zip(nodes[:-1], nodes[1:])]
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        return
 
 
-# ============================================================
-# Main
-# ============================================================
+def observed_departures(route: Sequence[Segment], segment_samples: Dict[Segment, List[Sample]]) -> List[datetime]:
+    """Use every timestamp represented by the first route segment's dataset."""
+    return sorted({sample.collected_at for sample in segment_samples[route[0]]})
 
-print("CannonMiner Router v1.1")
 
-def main(argv: List[str]) -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("start")
-    p.add_argument("end")
-    p.add_argument("speed", type=float)
-    args = p.parse_args(argv)
+def route_label(route: Sequence[Segment]) -> str:
+    return " -> ".join([route[0].start] + [segment.end for segment in route])
 
-    print("-" * 40)
-    print("Loading segments...")
 
-    tables = list_segment_tables()
-    segments = [parse_segment_name(t) for t in tables if parse_segment_name(t)]
+def rank(
+    evaluations: Sequence[RouteEvaluation], profile: str, max_delay_risk: float, min_confidence: float
+) -> List[RouteEvaluation]:
+    eligible = [
+        item for item in evaluations
+        if item.delay_risk <= max_delay_risk and item.confidence >= min_confidence
+    ]
+    pool = eligible or list(evaluations)
+    if profile == "fastest":
+        key = lambda item: (item.expected_seconds, item.p90_seconds, -item.confidence)
+    elif profile == "reliability":
+        key = lambda item: (item.p90_seconds, item.delay_risk, -item.confidence)
+    else:
+        key = lambda item: (item.p90_seconds, item.expected_seconds, -item.confidence)
+    return sorted(pool, key=key)
 
-    samples: Dict[str, List[SegmentSample]] = {}
-    stats: Dict[str, SegmentStats] = {}
 
-    for s in tqdm(segments, desc="Loading table samples", unit="segments"):
-        samples[s.table] = load_samples(s.table)
-        stats[s.table] = compute_stats(samples[s.table])
+def print_option(title: str, evaluation: RouteEvaluation, tz: ZoneInfo, target_mph: float) -> None:
+    print(f"\n=== {title} ===")
+    print(f"Route:                 {route_label(evaluation.segments)}")
+    print(f"Traffic pattern date:  {evaluation.departure.astimezone(tz).isoformat()}")
+    print(f"Target average speed:  {target_mph:.1f} mph")
+    print(f"Expected travel time:  {format_duration(evaluation.expected_seconds)}")
+    print(f"90% travel time:       {format_duration(evaluation.p90_seconds)}")
+    print(f"Risk of traffic delay: {evaluation.delay_risk * 100:.1f}%")
+    print(f"Data confidence:       {evaluation.confidence * 100:.1f}%")
+    print(f"Nearby supporting samples: {evaluation.supporting_samples}")
+    print(f"Distance:              {meters_to_miles(evaluation.total_distance_meters):.1f} miles")
 
-    print("Building graph...")
-    G = build_graph(segments, stats)
 
-    print("Enumerating candidate routes...")
-    routes = list(nx.all_simple_paths(G, args.start, args.end))
-    print(f"Total routes compared: {len(routes)}")
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("start", help="Start node, e.g. redball")
+    parser.add_argument("end", help="End node, e.g. portofino")
+    parser.add_argument("speed_mph", type=float,
+                        help="Target average driving speed, excluding traffic delays")
+    parser.add_argument("--profile", choices=("balanced", "fastest", "reliability"), default="balanced")
+    parser.add_argument("--timezone", default="America/New_York",
+                        help="IANA timezone for traffic buckets (default: America/New_York)")
+    parser.add_argument("--candidate-routes", type=int, default=25,
+                        help="Maximum baseline-time-ranked routes to score (default: 25)")
+    parser.add_argument("--max-delay-risk", type=float, default=0.20,
+                        help="Eligibility cap from 0 to 1 (default: 0.20)")
+    parser.add_argument("--min-confidence", type=float, default=0.20,
+                        help="Minimum data confidence from 0 to 1 (default: 0.20)")
+    args = parser.parse_args(argv)
 
-    print("Scoring routes...")
-    best: Optional[RouteEval] = None
+    if args.speed_mph <= 0:
+        parser.error("speed_mph must be positive")
+    if args.candidate_routes < 1:
+        parser.error("--candidate-routes must be positive")
+    if not 0.0 <= args.max_delay_risk <= 1.0 or not 0.0 <= args.min_confidence <= 1.0:
+        parser.error("risk and confidence must be between 0 and 1")
+    try:
+        trip_timezone = ZoneInfo(args.timezone)
+    except Exception as error:
+        parser.error(f"Invalid IANA timezone: {error}")
 
-    for nodes in tqdm(routes, desc="Evaluating routes", unit="route"):
-        route = [SegmentKey(G[u][v]["table"], u, v) for u, v in zip(nodes[:-1], nodes[1:])]
-        ev = evaluate_route_best_departure(route, samples, stats, args.speed)
-        if ev and (not best or ev.confidence_0_1 > best.confidence_0_1):
-            best = ev
+    print("CannonMiner time-aware router")
+    print("Loading traffic observations...")
+    segment_samples = load_segment_samples()
+    graph = build_graph(segment_samples, args.speed_mph)
+    routes = list(candidate_routes(graph, args.start, args.end, args.candidate_routes))
+    if not routes:
+        print(f"No route found from '{args.start}' to '{args.end}'.")
+        return 2
 
-    min_route = pick_min_distance_route(G, args.start, args.end)
-
-    print()
-    print("=== Best Route ===")
-    if best:
-        print(route_str(best.segments))
-        print(f"Supporting samples: {best.supporting_samples_total}")
-        print("\nSegment reliability breakdown:")
-        for seg in best.segments:
-            st = stats[seg.table]
-            print(f"- {seg.table}")
-            #print(f"    samples: {st.count}")
-            #print(f"    mean traffic: {format_seconds_readable(st.traffic_mean_s)}")
-            print(f"    std dev:      {format_seconds_readable(st.traffic_std_s)}")
-            #print(f"    CV:           {st.traffic_cv:.3f}")
-            print(f"    reliability:  {st.reliability_0_1 * 100:.1f}%")
-        print(f"Total distance: {meters_to_miles(best.total_distance_meters):.2f} miles")
-        print(f"Route confidence: {best.confidence_0_1 * 100:.2f}%")
-        best_departure_est = to_est(best.best_departure)
-        print(f"Best departure (EST): {best_departure_est.isoformat()}")
-        total_std_dev_s = sum(
-            stats[s.table].traffic_std_s
-            for s in best.segments
+    work_items = [
+        (route, departure)
+        for route in routes
+        for departure in observed_departures(route, segment_samples)
+    ]
+    print(f"Scoring {len(routes)} routes across {len(work_items)} observed departure times at {args.speed_mph:.1f} mph...")
+    evaluations: List[RouteEvaluation] = []
+    prediction_cache: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction] = {}
+    for route, departure in tqdm(work_items, desc="Scoring route/departure pairs", unit="pair"):
+        evaluations.append(
+            evaluate_route(route, departure, segment_samples, trip_timezone, args.speed_mph, prediction_cache)
         )
-        base_time_s = best.predicted_travel_seconds
-        with_traffic_s = base_time_s + total_std_dev_s
 
-        print(f"Predicted total travel time at {args.speed:.1f} mph:")
-        print(f"  {format_hhmmss(base_time_s)} (without traffic)")
-        print(f"  {format_hhmmss(with_traffic_s)} (with traffic variability + {format_hhmmss(total_std_dev_s)})")
-    else:
-        print("No feasible route found.")
-
-    print()
-    print("=== Minimal Distance Route (pure distance) ===")
-    if min_route:
-        dist = sum(stats[s.table].distance_meters_median for s in min_route)
-        dur = sum(predicted_seconds(stats[s.table].distance_meters_median, args.speed) for s in min_route)
-        support = sum(stats[s.table].count for s in min_route)
-        print(route_str(min_route))
-        print(f"Supporting samples: {support}")
-        print(f"Total distance: {meters_to_miles(dist):.2f} miles")
-        print("Route confidence: N/A")
-        print(f"Distance-based predicted duration: {format_hhmmss(dur)}")
-    else:
-        print("No distance-based route found.")
-
-    print("\nDone.")
-    print("-" * 40)
+    ordered = rank(evaluations, args.profile, args.max_delay_risk, args.min_confidence)
+    if not any(item.delay_risk <= args.max_delay_risk and item.confidence >= args.min_confidence
+               for item in evaluations):
+        print("Warning: no option meets the requested delay-risk and confidence requirements; showing the best available options.")
+    print_option(f"Recommended ({args.profile})", ordered[0], trip_timezone, args.speed_mph)
+    for position, evaluation in enumerate(ordered[1:3], start=2):
+        print_option(f"Alternative {position}", evaluation, trip_timezone, args.speed_mph)
+    print("\nDelay risk is the estimated chance that at least one segment has a traffic penalty.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())
