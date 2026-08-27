@@ -53,7 +53,9 @@ Create the schedule
 ```shell
 crontab -e
 ```
+```shell
 0 * * * * /home/<your_username>/projects/cannonminer/run_main.sh >> /home/<your_username>/projects/cannonminer/run.log 2>&1
+```
 
 10. Collect as much data as possible. The longer you let this run the more data it will find.
 
@@ -77,7 +79,6 @@ python router.py <startlocation> <endlocation> <avgmph>
 
 ## Dev Todos
 
-Refactor the file structure of this
-  It works great but looks messy af
-
-Make it more POSIX compliant, it should work on just about any flavor of 'nix not just Debian and its children.
+- Refactor the file structure of this
+  - It works great but looks messy af
+- Make it more POSIX compliant, it should work on just about any flavor of 'nix not just Debian and its children.
