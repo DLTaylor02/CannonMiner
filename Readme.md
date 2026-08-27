@@ -39,9 +39,9 @@ pip install requests "psycopg[binary]" sqlalchemy pydantic tenacity networkx num
 
 6. Define your DB connection in db_config.py
 
-7. Setup your API key and add it to maps_key.py
+7. Setup your Google API key and add it to maps_key.py. Instructions for this if you need it can be found in the Docs folder.
 
-8. Define your each of your route segments a file for each route segement in the segments folder.
+8. Customize your route segments if you'd like to add, remove, or change potential routes in the segment folder. A file already exists for each standard route segement.
 
 9. Create cronjob
 Update the username in run_main.sh
