@@ -59,14 +59,7 @@ crontab -e
 
 10. Collect as much data as possible. The longer you let this run the more data it will find.
 
-11. (optional) Gather estimated data for a specific month in the future to add more data to the database for more confidence in calculations. Be careful with this, it use a lot of API calls and will be a less accurate dataset.
-```Shell
-cd ~/projects/cannonminer
-source ~/projects/cannonminer/venv/bin/activate
-python collect_forecast.py <year> <numbericMonth>
-```
-
-12. Run the router.py to analyse the data
+11. Run the router.py to analyse the data
 Modes:
     default           -> Balanced
     fastest           -> Minimize predicted duration

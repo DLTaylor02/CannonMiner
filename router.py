@@ -16,9 +16,10 @@ treated as certain.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from itertools import islice
@@ -37,8 +38,15 @@ from db_config import DB_CONN_STRING
 
 
 METER_PER_MILE = 1609.344
-P90_Z_SCORE = 1.281551565545
 EASTERN_TIME = ZoneInfo("America/New_York")
+# A delay event is material when total congestion is at least five minutes or
+# two percent of the target-speed drive time, whichever is greater.
+MIN_MATERIAL_DELAY_SECONDS = 5 * 60
+MATERIAL_DELAY_DRIVE_TIME_SHARE = 0.02
+MIN_NONTRIVIAL_SEGMENT_DELAY_SECONDS = 2 * 60
+NONTRIVIAL_SEGMENT_DELAY_SHARE = 0.05
+RISK_SIMULATION_COUNT = 1024
+EMPIRICAL_SAMPLE_POINTS = 64
 
 
 @dataclass(frozen=True)
@@ -59,24 +67,23 @@ class Sample:
 @dataclass(frozen=True)
 class SegmentPrediction:
     mean_delay_seconds: float
-    std_delay_seconds: float
     distance_meters: float
+    normal_duration_seconds: float
     nearby_samples: int
-    total_samples: int
-    confidence: float
-    delay_probability: float
+    local_share: float
+    matching_delay_points: np.ndarray
 
 
 @dataclass(frozen=True)
 class RouteEvaluation:
     segments: Sequence[Segment]
     departure: datetime
+    achievable_driving_seconds: float
+    expected_congestion_seconds: float
     expected_seconds: float
-    p90_seconds: float
     delay_risk: float
-    confidence: float
     total_distance_meters: float
-    supporting_samples: int
+    matching_observations: int
 
 
 # Set once in each process by ``initialise_worker``. Keeping the data in worker
@@ -85,6 +92,7 @@ WORKER_SEGMENT_SAMPLES: Dict[Segment, List[Sample]] = {}
 WORKER_TRIP_TIMEZONE: Optional[ZoneInfo] = None
 WORKER_TARGET_MPH = 0.0
 WORKER_PREDICTION_CACHE: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction] = {}
+WORKER_DELAY_POINTS: Dict[Segment, np.ndarray] = {}
 
 
 def format_duration(seconds: float) -> str:
@@ -219,6 +227,21 @@ def month_distance(first: datetime, second: datetime) -> int:
     return min(difference, 12 - difference)
 
 
+def empirical_points(values: np.ndarray, weights: Optional[np.ndarray] = None) -> np.ndarray:
+    """Compress a delay distribution into equally probable quantile points."""
+    if weights is None and len(values) <= EMPIRICAL_SAMPLE_POINTS:
+        return values.astype(np.float32, copy=True)
+    order = np.argsort(values)
+    sorted_values = values[order]
+    if weights is None:
+        cumulative = (np.arange(len(sorted_values)) + 0.5) / len(sorted_values)
+    else:
+        sorted_weights = weights[order]
+        cumulative = np.cumsum(sorted_weights) / sorted_weights.sum()
+    targets = (np.arange(EMPIRICAL_SAMPLE_POINTS) + 0.5) / EMPIRICAL_SAMPLE_POINTS
+    return np.interp(targets, cumulative, sorted_values).astype(np.float32)
+
+
 def prediction_for(
     samples: Sequence[Sample], arrival: datetime, trip_timezone: ZoneInfo
 ) -> SegmentPrediction:
@@ -235,8 +258,7 @@ def prediction_for(
     )
     distances = np.asarray([sample.distance_meters for sample in samples], dtype=float)
     global_mean = float(np.mean(values))
-    global_std = max(float(np.std(values)), 30.0)
-    global_delay_probability = float(np.mean(values > 0))
+    normal_durations = np.asarray([sample.duration_seconds for sample in samples], dtype=float)
 
     weighted_values: List[float] = []
     weights: List[float] = []
@@ -255,31 +277,46 @@ def prediction_for(
         nearby = np.asarray(weighted_values, dtype=float)
         nearby_weights = np.asarray(weights, dtype=float)
         local_mean = float(np.average(nearby, weights=nearby_weights))
-        local_std = max(
-            float(np.sqrt(np.average((nearby - local_mean) ** 2, weights=nearby_weights))),
-            30.0,
-        )
-        local_delay_probability = float(np.average(nearby > 0, weights=nearby_weights))
     else:
-        local_mean, local_std = global_mean, global_std
-        local_delay_probability = global_delay_probability
+        local_mean = global_mean
 
     # Ten relevant observations make the local pattern dominant.
     local_share = nearby_count / (nearby_count + 10.0)
     mean = local_share * local_mean + (1.0 - local_share) * global_mean
-    variance = local_share * local_std ** 2 + (1.0 - local_share) * global_std ** 2
-    confidence = (1.0 - math.exp(-nearby_count / 8.0)) * (1.0 - math.exp(-len(samples) / 30.0))
 
     return SegmentPrediction(
         mean_delay_seconds=mean,
-        std_delay_seconds=math.sqrt(variance),
         distance_meters=float(np.median(distances)),
+        normal_duration_seconds=float(np.median(normal_durations)),
         nearby_samples=nearby_count,
-        total_samples=len(samples),
-        confidence=confidence,
-        delay_probability=(local_share * local_delay_probability
-                           + (1.0 - local_share) * global_delay_probability),
+        local_share=local_share,
+        matching_delay_points=empirical_points(
+            np.asarray(weighted_values, dtype=float), np.asarray(weights, dtype=float)
+        ) if weighted_values else np.empty(0, dtype=np.float32),
     )
+
+
+def stable_seed(route: Sequence[Segment], departure: datetime) -> int:
+    value = "|".join(segment.name for segment in route) + "|" + departure.isoformat()
+    return int.from_bytes(hashlib.blake2b(value.encode(), digest_size=8).digest(), "little")
+
+
+def sample_segment_delays(
+    prediction: SegmentPrediction, all_delay_points: np.ndarray, random: np.random.Generator
+) -> np.ndarray:
+    """Draw from compact blended local/global empirical distributions."""
+    simulated = random.choice(all_delay_points, size=RISK_SIMULATION_COUNT)
+    if prediction.matching_delay_points.size == 0 or prediction.local_share == 0:
+        return simulated
+
+    use_local = random.random(RISK_SIMULATION_COUNT) < prediction.local_share
+    local_count = int(np.count_nonzero(use_local))
+    if local_count:
+        simulated[use_local] = random.choice(
+            prediction.matching_delay_points,
+            size=local_count,
+        )
+    return simulated
 
 
 def evaluate_route(
@@ -289,14 +326,15 @@ def evaluate_route(
     trip_timezone: ZoneInfo,
     target_mph: float,
     prediction_cache: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction],
+    delay_points: Dict[Segment, np.ndarray],
 ) -> RouteEvaluation:
     arrival = departure
+    achievable_driving_seconds = 0.0
+    expected_congestion_seconds = 0.0
     expected_seconds = 0.0
-    variance_seconds = 0.0
     total_distance = 0.0
-    confidences: List[float] = []
-    no_delay_probability = 1.0
     support = 0
+    predictions: List[Tuple[Segment, SegmentPrediction, float]] = []
 
     for segment in route:
         local_arrival = arrival.astimezone(trip_timezone)
@@ -315,28 +353,40 @@ def evaluate_route(
             prediction_cache[cache_key] = prediction
         target_speed_seconds = prediction.distance_meters / mph_to_mps(target_mph)
         expected_seconds += target_speed_seconds + prediction.mean_delay_seconds
-        variance_seconds += prediction.std_delay_seconds ** 2
+        achievable_driving_seconds += target_speed_seconds
+        expected_congestion_seconds += prediction.mean_delay_seconds
         total_distance += prediction.distance_meters
-        confidences.append(prediction.confidence)
-        no_delay_probability *= 1.0 - prediction.delay_probability
         support += prediction.nearby_samples
+        predictions.append((segment, prediction, target_speed_seconds))
         arrival += timedelta(seconds=target_speed_seconds + prediction.mean_delay_seconds)
 
-    std_seconds = math.sqrt(variance_seconds)
-    p90_seconds = expected_seconds + P90_Z_SCORE * std_seconds
-    # At least one segment experiences a measured traffic penalty. This is a
-    # conservative independence approximation and is easier to act on than an
-    # arbitrary “30 minutes late” threshold.
-    delay_risk = 1.0 - no_delay_probability
+    material_delay_threshold = max(
+        MIN_MATERIAL_DELAY_SECONDS,
+        achievable_driving_seconds * MATERIAL_DELAY_DRIVE_TIME_SHARE,
+    )
+    random = np.random.default_rng(stable_seed(route, departure))
+    total_simulated_congestion = np.zeros(RISK_SIMULATION_COUNT)
+    nontrivial_slowdown = np.zeros(RISK_SIMULATION_COUNT, dtype=bool)
+    for segment, prediction, target_speed_seconds in predictions:
+        simulated_delay = sample_segment_delays(prediction, delay_points[segment], random)
+        total_simulated_congestion += simulated_delay
+        nontrivial_threshold = max(
+            MIN_NONTRIVIAL_SEGMENT_DELAY_SECONDS,
+            prediction.normal_duration_seconds * NONTRIVIAL_SEGMENT_DELAY_SHARE,
+        )
+        nontrivial_slowdown |= simulated_delay >= nontrivial_threshold
+
+    material_route_delay = total_simulated_congestion >= material_delay_threshold
+    delay_risk = float(np.mean(nontrivial_slowdown | material_route_delay))
     return RouteEvaluation(
         segments=route,
         departure=departure,
+        achievable_driving_seconds=achievable_driving_seconds,
+        expected_congestion_seconds=expected_congestion_seconds,
         expected_seconds=expected_seconds,
-        p90_seconds=p90_seconds,
         delay_risk=delay_risk,
-        confidence=min(confidences) if confidences else 0.0,
         total_distance_meters=total_distance,
-        supporting_samples=support,
+        matching_observations=support,
     )
 
 
@@ -344,11 +394,17 @@ def initialise_worker(
     segment_samples: Dict[Segment, List[Sample]], trip_timezone: ZoneInfo, target_mph: float
 ) -> None:
     """Initialise one process with the shared read-only routing inputs."""
-    global WORKER_SEGMENT_SAMPLES, WORKER_TRIP_TIMEZONE, WORKER_TARGET_MPH, WORKER_PREDICTION_CACHE
+    global WORKER_SEGMENT_SAMPLES, WORKER_TRIP_TIMEZONE, WORKER_TARGET_MPH, WORKER_PREDICTION_CACHE, WORKER_DELAY_POINTS
     WORKER_SEGMENT_SAMPLES = segment_samples
     WORKER_TRIP_TIMEZONE = trip_timezone
     WORKER_TARGET_MPH = target_mph
     WORKER_PREDICTION_CACHE = {}
+    WORKER_DELAY_POINTS = {
+        segment: empirical_points(np.asarray([
+            max(0.0, sample.traffic_seconds - sample.duration_seconds) for sample in samples
+        ], dtype=float))
+        for segment, samples in segment_samples.items()
+    }
 
 
 def evaluate_work_item(work_item: Tuple[Sequence[Segment], datetime]) -> RouteEvaluation:
@@ -363,7 +419,34 @@ def evaluate_work_item(work_item: Tuple[Sequence[Segment], datetime]) -> RouteEv
         WORKER_TRIP_TIMEZONE,
         WORKER_TARGET_MPH,
         WORKER_PREDICTION_CACHE,
+        WORKER_DELAY_POINTS,
     )
+
+
+def bounded_evaluations(
+    executor: ProcessPoolExecutor,
+    work_items: Iterable[Tuple[Sequence[Segment], datetime]],
+    max_pending: int,
+) -> Iterable[RouteEvaluation]:
+    """Keep only a small, bounded number of process-pool tasks in memory."""
+    iterator = iter(work_items)
+    pending = set()
+
+    def submit_next() -> bool:
+        try:
+            pending.add(executor.submit(evaluate_work_item, next(iterator)))
+            return True
+        except StopIteration:
+            return False
+
+    for _ in range(max_pending):
+        if not submit_next():
+            break
+    while pending:
+        completed, pending = wait(pending, return_when=FIRST_COMPLETED)
+        for future in completed:
+            yield future.result()
+            submit_next()
 
 
 def candidate_routes(
@@ -377,29 +460,44 @@ def candidate_routes(
         return
 
 
-def observed_departures(route: Sequence[Segment], segment_samples: Dict[Segment, List[Sample]]) -> List[datetime]:
-    """Use every timestamp represented by the first route segment's dataset."""
-    return sorted({sample.collected_at for sample in segment_samples[route[0]]})
+def generated_departures(
+    segment_samples: Dict[Segment, List[Sample]], trip_timezone: ZoneInfo
+) -> List[datetime]:
+    """Generate 30-minute departure patterns from all available month/weekday data.
+
+    The prediction model uses month, weekday, and time of day; exact historic
+    timestamps add no predictive detail. One representative date per available
+    month/weekday pattern keeps the search comprehensive without re-scoring
+    equivalent dates from different years.
+    """
+    representative_dates: Dict[Tuple[int, int], datetime] = {}
+    for samples in segment_samples.values():
+        for sample in samples:
+            local = sample.collected_at.astimezone(trip_timezone)
+            key = (local.month, local.weekday())
+            if key not in representative_dates or local > representative_dates[key]:
+                representative_dates[key] = local
+
+    departures: List[datetime] = []
+    for representative in representative_dates.values():
+        midnight = representative.replace(hour=0, minute=0, second=0, microsecond=0)
+        departures.extend(midnight + timedelta(minutes=30 * slot) for slot in range(48))
+    return sorted(departures)
 
 
 def route_label(route: Sequence[Segment]) -> str:
     return " -> ".join([route[0].start] + [segment.end for segment in route])
 
 
-def rank(
-    evaluations: Sequence[RouteEvaluation], profile: str, max_delay_risk: float, min_confidence: float
-) -> List[RouteEvaluation]:
-    eligible = [
-        item for item in evaluations
-        if item.delay_risk <= max_delay_risk and item.confidence >= min_confidence
-    ]
+def rank(evaluations: Sequence[RouteEvaluation], profile: str, max_delay_risk: float) -> List[RouteEvaluation]:
+    eligible = [item for item in evaluations if item.delay_risk <= max_delay_risk]
     pool = eligible or list(evaluations)
     if profile == "fastest":
-        key = lambda item: (item.expected_seconds, item.p90_seconds, -item.confidence)
+        key = lambda item: (item.expected_seconds, item.delay_risk)
     elif profile == "reliability":
-        key = lambda item: (item.p90_seconds, item.delay_risk, -item.confidence)
+        key = lambda item: (item.delay_risk, item.expected_seconds)
     else:
-        key = lambda item: (item.p90_seconds, item.expected_seconds, -item.confidence)
+        key = lambda item: (item.expected_seconds, item.delay_risk)
     return sorted(pool, key=key)
 
 
@@ -414,11 +512,11 @@ def print_option(title: str, evaluation: RouteEvaluation, target_mph: float) -> 
     print(f"Route:                 {route_label(evaluation.segments)}")
     print(f"Traffic pattern:       {format_eastern_departure(evaluation.departure)}")
     print(f"Target average speed:  {target_mph:.1f} mph")
-    print(f"Expected travel time:  {format_duration(evaluation.expected_seconds)}")
-    print(f"90% travel time:       {format_duration(evaluation.p90_seconds)}")
-    print(f"Risk of traffic delay: {evaluation.delay_risk * 100:.1f}%")
-    print(f"Data confidence:       {evaluation.confidence * 100:.1f}%")
-    print(f"Nearby supporting samples: {evaluation.supporting_samples}")
+    print(f"Achievable drive time: {format_duration(evaluation.achievable_driving_seconds)}")
+    print(f"Expected congestion:   +{format_duration(evaluation.expected_congestion_seconds)}")
+    print(f"Expected route time:   {format_duration(evaluation.expected_seconds)}")
+    print(f"Traffic-delay risk:    {evaluation.delay_risk * 100:.1f}%")
+    print(f"Matching observations: {evaluation.matching_observations}")
     print(f"Distance:              {meters_to_miles(evaluation.total_distance_meters):.1f} miles")
 
 
@@ -437,16 +535,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Worker processes used for scoring (default: all available CPU cores)")
     parser.add_argument("--max-delay-risk", type=float, default=0.20,
                         help="Eligibility cap from 0 to 1 (default: 0.20)")
-    parser.add_argument("--min-confidence", type=float, default=0.20,
-                        help="Minimum data confidence from 0 to 1 (default: 0.20)")
     args = parser.parse_args(argv)
 
     if args.speed_mph <= 0:
         parser.error("speed_mph must be positive")
     if args.candidate_routes < 1 or args.workers < 1:
         parser.error("--candidate-routes and --workers must be positive")
-    if not 0.0 <= args.max_delay_risk <= 1.0 or not 0.0 <= args.min_confidence <= 1.0:
-        parser.error("risk and confidence must be between 0 and 1")
+    if not 0.0 <= args.max_delay_risk <= 1.0:
+        parser.error("--max-delay-risk must be between 0 and 1")
     try:
         trip_timezone = ZoneInfo(args.timezone)
     except Exception as error:
@@ -461,33 +557,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"No route found from '{args.start}' to '{args.end}'.")
         return 2
 
-    work_items = [
-        (route, departure)
-        for route in routes
-        for departure in observed_departures(route, segment_samples)
-    ]
-    print(f"Scoring {len(routes)} routes across {len(work_items)} observed departure times at {args.speed_mph:.1f} mph...")
-    worker_count = min(args.workers, len(work_items))
+    departures = generated_departures(segment_samples, trip_timezone)
+    work_item_count = len(routes) * len(departures)
+    print(f"Scoring {len(routes)} routes across {len(departures)} generated departure patterns at {args.speed_mph:.1f} mph...")
+    worker_count = min(args.workers, work_item_count)
     with ProcessPoolExecutor(
         max_workers=worker_count,
         initializer=initialise_worker,
         initargs=(segment_samples, trip_timezone, args.speed_mph),
     ) as executor:
         evaluations = list(tqdm(
-            executor.map(evaluate_work_item, work_items, chunksize=32),
-            total=len(work_items),
+            bounded_evaluations(
+                executor,
+                ((route, departure) for route in routes for departure in departures),
+                max_pending=worker_count * 4,
+            ),
+            total=work_item_count,
             desc=f"Scoring with {worker_count} workers",
             unit="pair",
         ))
 
-    ordered = rank(evaluations, args.profile, args.max_delay_risk, args.min_confidence)
-    if not any(item.delay_risk <= args.max_delay_risk and item.confidence >= args.min_confidence
-               for item in evaluations):
-        print("Warning: no option meets the requested delay-risk and confidence requirements; showing the best available options.")
+    ordered = rank(evaluations, args.profile, args.max_delay_risk)
+    if not any(item.delay_risk <= args.max_delay_risk for item in evaluations):
+        print("Warning: no option meets the requested delay-risk requirement; showing the best available options.")
     print_option(f"Recommended ({args.profile})", ordered[0], args.speed_mph)
     for position, evaluation in enumerate(ordered[1:3], start=2):
         print_option(f"Alternative {position}", evaluation, args.speed_mph)
-    print("\nDelay risk is the estimated chance that at least one segment has a traffic penalty.")
+    print("\nTraffic-delay risk combines nontrivial segment slowdowns with material total-route congestion.")
     return 0
 
 
