@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from itertools import islice
@@ -36,6 +38,7 @@ from db_config import DB_CONN_STRING
 
 METER_PER_MILE = 1609.344
 P90_Z_SCORE = 1.281551565545
+EASTERN_TIME = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,14 @@ class RouteEvaluation:
     confidence: float
     total_distance_meters: float
     supporting_samples: int
+
+
+# Set once in each process by ``initialise_worker``. Keeping the data in worker
+# state avoids serialising the full sample dataset for every work item.
+WORKER_SEGMENT_SAMPLES: Dict[Segment, List[Sample]] = {}
+WORKER_TRIP_TIMEZONE: Optional[ZoneInfo] = None
+WORKER_TARGET_MPH = 0.0
+WORKER_PREDICTION_CACHE: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction] = {}
 
 
 def format_duration(seconds: float) -> str:
@@ -329,6 +340,32 @@ def evaluate_route(
     )
 
 
+def initialise_worker(
+    segment_samples: Dict[Segment, List[Sample]], trip_timezone: ZoneInfo, target_mph: float
+) -> None:
+    """Initialise one process with the shared read-only routing inputs."""
+    global WORKER_SEGMENT_SAMPLES, WORKER_TRIP_TIMEZONE, WORKER_TARGET_MPH, WORKER_PREDICTION_CACHE
+    WORKER_SEGMENT_SAMPLES = segment_samples
+    WORKER_TRIP_TIMEZONE = trip_timezone
+    WORKER_TARGET_MPH = target_mph
+    WORKER_PREDICTION_CACHE = {}
+
+
+def evaluate_work_item(work_item: Tuple[Sequence[Segment], datetime]) -> RouteEvaluation:
+    """Evaluate one route/departure pair inside a process-pool worker."""
+    route, departure = work_item
+    if WORKER_TRIP_TIMEZONE is None:
+        raise RuntimeError("Router worker was not initialised")
+    return evaluate_route(
+        route,
+        departure,
+        WORKER_SEGMENT_SAMPLES,
+        WORKER_TRIP_TIMEZONE,
+        WORKER_TARGET_MPH,
+        WORKER_PREDICTION_CACHE,
+    )
+
+
 def candidate_routes(
     graph: nx.DiGraph, start: str, end: str, limit: int
 ) -> Iterable[List[Segment]]:
@@ -366,10 +403,16 @@ def rank(
     return sorted(pool, key=key)
 
 
-def print_option(title: str, evaluation: RouteEvaluation, tz: ZoneInfo, target_mph: float) -> None:
+def format_eastern_departure(departure: datetime) -> str:
+    """Render collected timestamps in New York local time, not collector time."""
+    local = departure.astimezone(EASTERN_TIME)
+    return local.strftime("%A, %m/%d/%y at %H:%M %Z (Eastern Time)")
+
+
+def print_option(title: str, evaluation: RouteEvaluation, target_mph: float) -> None:
     print(f"\n=== {title} ===")
     print(f"Route:                 {route_label(evaluation.segments)}")
-    print(f"Traffic pattern date:  {evaluation.departure.astimezone(tz).isoformat()}")
+    print(f"Traffic pattern:       {format_eastern_departure(evaluation.departure)}")
     print(f"Target average speed:  {target_mph:.1f} mph")
     print(f"Expected travel time:  {format_duration(evaluation.expected_seconds)}")
     print(f"90% travel time:       {format_duration(evaluation.p90_seconds)}")
@@ -390,6 +433,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="IANA timezone for traffic buckets (default: America/New_York)")
     parser.add_argument("--candidate-routes", type=int, default=25,
                         help="Maximum baseline-time-ranked routes to score (default: 25)")
+    parser.add_argument("--workers", type=int, default=os.cpu_count() or 1,
+                        help="Worker processes used for scoring (default: all available CPU cores)")
     parser.add_argument("--max-delay-risk", type=float, default=0.20,
                         help="Eligibility cap from 0 to 1 (default: 0.20)")
     parser.add_argument("--min-confidence", type=float, default=0.20,
@@ -398,8 +443,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.speed_mph <= 0:
         parser.error("speed_mph must be positive")
-    if args.candidate_routes < 1:
-        parser.error("--candidate-routes must be positive")
+    if args.candidate_routes < 1 or args.workers < 1:
+        parser.error("--candidate-routes and --workers must be positive")
     if not 0.0 <= args.max_delay_risk <= 1.0 or not 0.0 <= args.min_confidence <= 1.0:
         parser.error("risk and confidence must be between 0 and 1")
     try:
@@ -422,20 +467,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for departure in observed_departures(route, segment_samples)
     ]
     print(f"Scoring {len(routes)} routes across {len(work_items)} observed departure times at {args.speed_mph:.1f} mph...")
-    evaluations: List[RouteEvaluation] = []
-    prediction_cache: Dict[Tuple[Segment, int, int, int, int], SegmentPrediction] = {}
-    for route, departure in tqdm(work_items, desc="Scoring route/departure pairs", unit="pair"):
-        evaluations.append(
-            evaluate_route(route, departure, segment_samples, trip_timezone, args.speed_mph, prediction_cache)
-        )
+    worker_count = min(args.workers, len(work_items))
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=initialise_worker,
+        initargs=(segment_samples, trip_timezone, args.speed_mph),
+    ) as executor:
+        evaluations = list(tqdm(
+            executor.map(evaluate_work_item, work_items, chunksize=32),
+            total=len(work_items),
+            desc=f"Scoring with {worker_count} workers",
+            unit="pair",
+        ))
 
     ordered = rank(evaluations, args.profile, args.max_delay_risk, args.min_confidence)
     if not any(item.delay_risk <= args.max_delay_risk and item.confidence >= args.min_confidence
                for item in evaluations):
         print("Warning: no option meets the requested delay-risk and confidence requirements; showing the best available options.")
-    print_option(f"Recommended ({args.profile})", ordered[0], trip_timezone, args.speed_mph)
+    print_option(f"Recommended ({args.profile})", ordered[0], args.speed_mph)
     for position, evaluation in enumerate(ordered[1:3], start=2):
-        print_option(f"Alternative {position}", evaluation, trip_timezone, args.speed_mph)
+        print_option(f"Alternative {position}", evaluation, args.speed_mph)
     print("\nDelay risk is the estimated chance that at least one segment has a traffic penalty.")
     return 0
 
