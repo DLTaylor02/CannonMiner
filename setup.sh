@@ -185,4 +185,4 @@ $SUDO systemctl is-active --quiet cron || fail "cron is not running."
 APP_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo
 echo "CannonMiner is installed at http://${APP_IP:-localhost}/"
-echo "Set the collection interval and Google API key in the WebUI Settings page."
+echo "Review the collection interval, Google API key, and collection authorization in WebUI Settings."

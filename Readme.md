@@ -43,6 +43,13 @@ installs the collector schedule. The script stops on unsupported operating
 systems, old PHP versions, missing extensions, failed service checks, invalid
 Nginx configuration, or an unreadable web root.
 
+During first-time database setup, the installer optionally prompts for the
+Google Maps API key with hidden input. Press Enter at the prompt to skip it and
+add the key later under WebUI Settings. The repository and `.env.example` do
+not contain an example or default API key. In the WebUI, a fixed masked value
+and Saved status indicate that a key exists without sending the real key back
+in the HTML. Leaving that masked value unchanged preserves the stored key.
+
 The automatic installer currently supports systemd-based Debian and Ubuntu.
 Other systems require the equivalent dependencies and manual web-server and
 scheduler configuration. `composer serve` remains available for development;

@@ -71,9 +71,12 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $body['collection_interval_minutes'] = (string)max(5, min(10080, (int)($body['collection_interval_minutes'] ?? 60)));
         $body['google_data_storage_authorized'] = isset($body['google_data_storage_authorized']) ? 'yes' : 'no';
+        $submittedKey = trim((string)($body['google_maps_api_key'] ?? ''));
+        if ($submittedKey === '' || $submittedKey === '************') unset($body['google_maps_api_key']);
         $settings->save($body); $message='Settings saved.';
     }
     $lastRun=$pdo->query('SELECT * FROM collection_runs ORDER BY started_at DESC LIMIT 1')->fetch();
-    return $render($request,$response,'settings.twig',['settings'=>$settings->all(),'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
+    $values=$settings->all(); $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
+    return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->run();
