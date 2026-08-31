@@ -5,6 +5,7 @@ ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 INSTALL_USER="${SUDO_USER:-$(id -un)}"
 APP_DB_NAME="${CANNONMINER_DB_NAME:-cannonminer}"
 APP_DB_USER="${CANNONMINER_DB_USER:-cannonminer}"
+DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -21,6 +22,9 @@ as_user() {
 }
 
 case "$ROOT_DIR" in *"'"*|*$'\n'*) fail "The installation path must not contain an apostrophe or newline." ;; esac
+case "$DEPLOY_DIR" in /*) ;; *) fail "CANNONMINER_INSTALL_DIR must be an absolute path." ;; esac
+case "$DEPLOY_DIR" in /|/var|/var/www) fail "Refusing to use broad installation path $DEPLOY_DIR." ;; esac
+case "$DEPLOY_DIR" in *"'"*|*$'\n'*) fail "The installation path must not contain an apostrophe or newline." ;; esac
 case "$APP_DB_NAME:$APP_DB_USER" in *[!a-zA-Z0-9_:]*) fail "Database and role names may contain only letters, digits, and underscores." ;; esac
 [ -n "$APP_DB_NAME" ] && [ -n "$APP_DB_USER" ] || fail "Database and role names must not be empty."
 
@@ -40,11 +44,40 @@ else
   fail "sudo or a root shell is required to install packages and services."
 fi
 
-info "Installing PHP, PostgreSQL, Composer, Nginx, and cron"
-$SUDO apt-get update
-$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  php-cli php-fpm php-pgsql php-mbstring php-xml php-curl \
-  composer postgresql postgresql-contrib nginx cron curl unzip openssl
+if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
+  info "Installing PHP, PostgreSQL, Composer, Nginx, and cron"
+  $SUDO apt-get update
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    php-cli php-fpm php-pgsql php-mbstring php-xml php-curl \
+    composer postgresql postgresql-contrib nginx cron curl unzip openssl rsync
+
+  DEPLOY_DIR="$(realpath -m "$DEPLOY_DIR")"
+  if [ "$ROOT_DIR" != "$DEPLOY_DIR" ]; then
+    case "$DEPLOY_DIR/" in "$ROOT_DIR/"*) fail "Deployment directory must not be inside the source checkout." ;; esac
+    if [ -d "$DEPLOY_DIR" ] && [ -n "$(find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+      if [ ! -f "$DEPLOY_DIR/router.py" ] \
+        && { [ ! -f "$DEPLOY_DIR/composer.json" ] || ! grep -q '"cannonminer/cannonminer"' "$DEPLOY_DIR/composer.json"; }; then
+        fail "Refusing to overwrite non-CannonMiner directory $DEPLOY_DIR."
+      fi
+    fi
+    info "Deploying application to $DEPLOY_DIR"
+    $SUDO install -d -m 0755 "$DEPLOY_DIR"
+    $SUDO rsync -a --delete \
+      --exclude '.git/' --exclude '.env' --exclude 'vendor/' --exclude 'var/' \
+      "$ROOT_DIR/" "$DEPLOY_DIR/"
+    if [ -f "$ROOT_DIR/.env" ] && [ ! -f "$DEPLOY_DIR/.env" ]; then
+      $SUDO install -m 0640 "$ROOT_DIR/.env" "$DEPLOY_DIR/.env"
+    fi
+    $SUDO chown -R "$INSTALL_USER":www-data "$DEPLOY_DIR"
+    info "Continuing installation from $DEPLOY_DIR"
+    exec env \
+      CANNONMINER_DEPLOYED=1 \
+      CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" \
+      CANNONMINER_DB_NAME="$APP_DB_NAME" \
+      CANNONMINER_DB_USER="$APP_DB_USER" \
+      bash "$DEPLOY_DIR/setup.sh"
+  fi
+fi
 
 command -v php >/dev/null 2>&1 || fail "PHP installation did not provide a php executable."
 command -v composer >/dev/null 2>&1 || fail "Composer installation failed."
@@ -104,7 +137,7 @@ php bin/install.php
 
 PHP_FPM_SOCKET="$(find /run/php -maxdepth 1 -type s -name 'php*-fpm.sock' -print -quit)"
 [ -n "$PHP_FPM_SOCKET" ] || fail "PHP-FPM socket was not found under /run/php."
-as_user www-data test -r "$ROOT_DIR/public/index.php" || fail "Nginx cannot read the web root. Move the project to /opt/cannonminer or grant directory traversal, then rerun setup."
+as_user www-data test -r "$ROOT_DIR/public/index.php" || fail "Nginx cannot read $ROOT_DIR/public. Correct the directory permissions, then rerun setup."
 as_user www-data test -r "$ROOT_DIR/.env" || fail "PHP-FPM cannot read .env; verify its installer:www-data ownership and parent-directory access."
 
 info "Configuring Nginx"
