@@ -62,12 +62,18 @@ database migrations intentionally remain under `/var/www/cannonminer` for
 repeatable upgrades and recovery; none are reachable through the configured
 Nginx `public/` document root.
 
-For a non-default legacy database or application role, set
-`CANNONMINER_DB_NAME` and/or `CANNONMINER_DB_USER` when invoking setup:
+To reuse an existing or non-default database, create `.env` before running
+setup and enter the existing PostgreSQL connection there:
 
 ```bash
-CANNONMINER_DB_NAME=my_existing_database bash setup.sh
+cp .env.example .env
+# Edit .env, then run:
+bash setup.sh
 ```
+
+When the deployment does not already have an `.env`, setup securely copies the
+one from the source checkout to `/var/www/cannonminer/.env`. If neither location
+has one, setup creates a new `cannonminer` database and application account.
 
 ## Upgrading an original Python installation
 

@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 INSTALL_USER="${SUDO_USER:-$(id -un)}"
-APP_DB_NAME="${CANNONMINER_DB_NAME:-cannonminer}"
-APP_DB_USER="${CANNONMINER_DB_USER:-cannonminer}"
+APP_DB_NAME="cannonminer"
+APP_DB_USER="cannonminer"
 DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -25,8 +25,6 @@ case "$ROOT_DIR" in *"'"*|*$'\n'*) fail "The installation path must not contain 
 case "$DEPLOY_DIR" in /*) ;; *) fail "CANNONMINER_INSTALL_DIR must be an absolute path." ;; esac
 case "$DEPLOY_DIR" in /|/var|/var/www) fail "Refusing to use broad installation path $DEPLOY_DIR." ;; esac
 case "$DEPLOY_DIR" in *"'"*|*$'\n'*) fail "The installation path must not contain an apostrophe or newline." ;; esac
-case "$APP_DB_NAME:$APP_DB_USER" in *[!a-zA-Z0-9_:]*) fail "Database and role names may contain only letters, digits, and underscores." ;; esac
-[ -n "$APP_DB_NAME" ] && [ -n "$APP_DB_USER" ] || fail "Database and role names must not be empty."
 
 [ -r /etc/os-release ] || fail "Cannot identify this OS. Install PHP 8.2+, PostgreSQL, Composer, Nginx, and cron manually."
 # shellcheck disable=SC1091
@@ -73,8 +71,6 @@ if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
     exec env \
       CANNONMINER_DEPLOYED=1 \
       CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" \
-      CANNONMINER_DB_NAME="$APP_DB_NAME" \
-      CANNONMINER_DB_USER="$APP_DB_USER" \
       bash "$DEPLOY_DIR/setup.sh"
   fi
 fi
