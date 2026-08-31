@@ -4,6 +4,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use CannonMiner\Database;
+use CannonMiner\LegacyImporter;
 
 function readHidden(string $prompt): string
 {
@@ -25,9 +26,24 @@ function readHidden(string $prompt): string
 
 $root = dirname(__DIR__);
 $pdo = Database::connect($root);
+echo "Preparing database schema...\n";
 $pdo->exec((string) file_get_contents($root . '/database/schema.sql'));
 $pdo->exec((string) file_get_contents($root . '/database/seed.sql'));
 $pdo->exec((string) file_get_contents($root . '/database/import_legacy.sql'));
+
+echo "Scanning for legacy segment observations. Large collections can take several minutes to import.\n";
+$importer = new LegacyImporter($pdo);
+$summary = $importer->import(static function (int $done, int $total, ?string $table): void {
+    $width = 36;
+    $ratio = $total > 0 ? $done / $total : 1;
+    $filled = (int) floor($ratio * $width);
+    $bar = str_repeat('=', $filled) . str_repeat(' ', $width - $filled);
+    $label = $table ? " {$table}" : '';
+    printf("\rLegacy import [%s] %3d%% %d/%d%s", $bar, (int) round($ratio * 100), $done, $total, $label);
+    if ($done >= $total) echo PHP_EOL;
+});
+printf("Legacy import complete: %d rows from %d tables; %d unmatched tables skipped.\n",
+    $summary['rows'], $summary['tables'], $summary['skipped']);
 
 $count = (int) $pdo->query('SELECT count(*) FROM users')->fetchColumn();
 if ($count === 0) {

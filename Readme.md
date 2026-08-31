@@ -11,7 +11,13 @@ The recommended flow is to clone or unpack the source anywhere convenient and
 run the installer from that checkout:
 
 ```bash
+git clone -b WebUI https://github.com/DLTaylor02/CannonMiner.git
 bash setup.sh
+cd CannonMiner
+cp .env.example .env
+nano .env            #define your existing Postgres configuration here or desired configuration
+chmod +x ./setup.sh
+./setup.sh
 ```
 
 By default, setup synchronizes a production copy to `/var/www/cannonminer` and
@@ -45,10 +51,7 @@ Nginx configuration, or an unreadable web root.
 
 During first-time database setup, the installer optionally prompts for the
 Google Maps API key with hidden input. Press Enter at the prompt to skip it and
-add the key later under WebUI Settings. The repository and `.env.example` do
-not contain an example or default API key. In the WebUI, a fixed masked value
-and Saved status indicate that a key exists without sending the real key back
-in the HTML. Leaving that masked value unchanged preserves the stored key.
+add the key later under WebUI Settings.
 
 The automatic installer currently supports systemd-based Debian and Ubuntu.
 Other systems require the equivalent dependencies and manual web-server and
@@ -61,15 +64,6 @@ preserving `.env`, `vendor/`, and `var/`. `setup.sh`, `composer.json`, and the
 database migrations intentionally remain under `/var/www/cannonminer` for
 repeatable upgrades and recovery; none are reachable through the configured
 Nginx `public/` document root.
-
-To reuse an existing or non-default database, create `.env` before running
-setup and enter the existing PostgreSQL connection there:
-
-```bash
-cp .env.example .env
-# Edit .env, then run:
-bash setup.sh
-```
 
 When the deployment does not already have an `.env`, setup securely copies the
 one from the source checkout to `/var/www/cannonminer/.env`. If neither location
@@ -91,10 +85,12 @@ Imports are tracked by source table and row ID, so rerunning the installer does
 not duplicate migrated measurements. Original tables are left intact and can
 be retained until the migrated counts have been verified. Custom legacy tables
 are imported when their `<start>_to_<end>` name matches a row in `segments`;
-add custom segment rows before rerunning `database/import_legacy.sql`.
+add custom segment rows before rerunning `bash setup.sh`.
 
-If `.env` already exists, setup preserves it. Confirm that it points to the
-database containing the legacy tables before running the migration.
+During this stage setup prints a row-based progress bar, the active legacy
+table, and a final imported/skipped summary. Imports are committed in batches,
+so a long migration can be resumed by rerunning setup without duplicating
+completed rows.
 
 ## Scheduled collection
 
