@@ -1,0 +1,4 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}CannonMiner{% endblock %}</title><link rel="stylesheet" href="/assets/app.css"></head><body>
+{% if user %}<header><a class="brand" href="/">CannonMiner</a><nav><a href="/">Route explorer</a><a href="/trends">Avoid trends</a><a href="/settings">Settings</a></nav><form method="post" action="/logout"><input type="hidden" name="_token" value="{{ csrf }}"><button class="icon" title="Sign out" aria-label="Sign out">&#x21aa;</button></form></header>{% endif %}
+<main>{% block content %}{% endblock %}</main></body></html>

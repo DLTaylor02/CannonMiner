@@ -1,81 +1,112 @@
 # CannonMiner
 
-For a trip from the Redball Garage in New York to the Portofino Marina Hotel in Los Angeles, which route/departure pair gives the fastest arrival while keeping the risk of a costly delay acceptably low?
+CannonMiner is a PHP 8.2 web application for comparing routes and recurring
+departure windows against historical traffic-delay observations. It includes
+authentication, route maps, database-backed configuration, scheduled
+collection, and reports for traffic windows to avoid.
 
-I run a custom-built Cannonball routing platform that models real-world traffic variability instead of chasing average speed. It evaluates all viable route segments between endpoints, penalizes high-variance traffic behavior, and selects routes and departure times that are statistically least likely to experience delay at a target cruising speed. The result is a risk-optimized route designed for consistency under real conditions.
+## Supported installation
 
-## Setup
+Run the installer from the project directory:
 
-1. Install Debian
-
-2. Install and setup a PostgreSQL server
-```shell
-apt install -y postgresql postgresql-contrib
-systemctl enable --now postgresql
-sudo -i -u postgres
-psql
-ALTER USER postgres WITH PASSWORD '<your_strong_password>';
-\q
-exit
-sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" /etc/postgresql/*/main/postgresql.conf
-echo "host    all    all    192.168.1.0/24    md5" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf
-systemctl restart postgresql
+```bash
+bash setup.sh
 ```
 
-3. Create a new database named cannonminer
+On Debian and Ubuntu, the script installs and validates:
 
-4. Install dependencies and setup environment
-```shell
-apt install -y python3 python3-venv python3-pip
-mkdir -p ~/projects/cannonminer
-cd ~/projects/cannonminer/
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install requests "psycopg[binary]" sqlalchemy pydantic tenacity networkx numpy tqdm
+- PHP 8.2 or newer, PHP-FPM, and the PostgreSQL, XML, mbstring, and cURL extensions
+- Composer 2 and all PHP packages in `composer.json`
+- PostgreSQL server and client
+- Nginx
+- cron
+
+It then creates or reuses the `cannonminer` database, creates a dedicated
+database login, writes the bootstrap connection to `.env`, migrates the schema,
+prompts for the first WebUI administrator, configures Nginx/PHP-FPM, and
+installs the collector schedule. The script stops on unsupported operating
+systems, old PHP versions, missing extensions, failed service checks, invalid
+Nginx configuration, or an unreadable web root.
+
+The automatic installer currently supports systemd-based Debian and Ubuntu.
+Other systems require the equivalent dependencies and manual web-server and
+scheduler configuration. `composer serve` remains available for development;
+PHP's built-in server is not the production setup.
+
+For a non-default legacy database or application role, set
+`CANNONMINER_DB_NAME` and/or `CANNONMINER_DB_USER` when invoking setup:
+
+```bash
+CANNONMINER_DB_NAME=my_existing_database bash setup.sh
 ```
 
-5. Clone this repository to ~/projects/cannonminer
+## Upgrading an original Python installation
 
-6. Define your DB connection in db_config.py
+Back up PostgreSQL before upgrading. Install this version over the original
+project and run `bash setup.sh` on the same host. When the original
+`cannonminer` database exists, the installer reuses it and grants the new
+application role access. It imports original observation tables:
 
-7. Setup your Google API key and add it to maps_key.py. Instructions for this if you need it can be found in the Docs folder.
+- `segment_<start>_to_<end>` observations
 
-8. If you'd like to add, remove, or change potential routes you can do this in the in the segments folder. A file already exists for each standard route segement.
+Legacy `segmentestimate_*` and other estimation tables are intentionally
+ignored.
 
-9. Create cronjob
-Update the username in run_main.sh
-Make it executable
-```shell
-chmod +x /home/<your_username>/projects/cannonminer/run_main.sh
+Imports are tracked by source table and row ID, so rerunning the installer does
+not duplicate migrated measurements. Original tables are left intact and can
+be retained until the migrated counts have been verified. Custom legacy tables
+are imported when their `<start>_to_<end>` name matches a row in `segments`;
+add custom segment rows before rerunning `database/import_legacy.sql`.
+
+If `.env` already exists, setup preserves it. Confirm that it points to the
+database containing the legacy tables before running the migration.
+
+## Scheduled collection
+
+Setup creates `/etc/cron.d/cannonminer`. Cron checks once per minute, while the
+actual collection interval is read from PostgreSQL and can be changed under
+WebUI Settings from 5 minutes to 7 days. PostgreSQL locking prevents overlapping
+runs. Results and failures are recorded in `collection_runs`; collector output
+is written to `var/collector.log`.
+
+A manual collection ignores the interval:
+
+```bash
+composer collect
 ```
-Create the schedule
-```shell
-crontab -e
-```
-```shell
-0 * * * * /home/<your_username>/projects/cannonminer/run_main.sh >> /home/<your_username>/projects/cannonminer/run.log 2>&1
-```
 
-10. Collect as much data as possible. The longer you let this run the more data it will find.
+Collection requires a Google Maps API key and explicit confirmation in Settings
+that the operator's Google agreement permits persistent traffic-data storage.
 
-11. Run the router.py to analyse the data
-Modes:
-    default           -> Balanced
-    fastest           -> Minimize predicted duration
-    reliability       -> Minimize variance (high confidence but ignores real world cronology)
-```shell
-cd ~/projects/cannonminer
-source ~/projects/cannonminer/venv/bin/activate
-python router.py <startlocation> <endlocation> <avgmph>
-```
+## Configuration and security
 
-## Default Segments
+Application configuration, administrator accounts, collection frequency, and
+route segments live in PostgreSQL. `.env` contains only the bootstrap database
+connection and is created with restricted permissions. Use HTTPS in front of
+the generated Nginx site before exposing it beyond a trusted network.
 
-![CannonMiner route segments](Docs/Segments.png)
+## Licensing and Google data
 
-## Dev Todos
+CannonMiner code is distributed under the MIT License. This permits use,
+copying, modification, redistribution, and commercial use while requiring the
+copyright and license notice to be preserved. It fits the goal of software that
+is free of charge and permissively reusable.
 
-- Refactor the file structure of this
-  - It works great but looks messy af
-- Make it more POSIX compliant, it should work on just about any flavor of 'nix not just Debian and its children.
+The MIT License covers this project's code only. It does not license Google
+Maps content, API access, collected traffic responses, or Composer packages.
+Google's standard terms generally restrict persistent storage of Maps content
+except for specific documented allowances. An operator must have an applicable
+agreement or permission for CannonMiner's historical-storage use case. See
+`THIRD_PARTY_NOTICES.md` before enabling collection.
+
+Composer dependencies retain their own licenses in `vendor/`. Setup generates
+the exact resolved inventory at `var/composer-licenses.json`.
+
+## Layout
+
+- `public/`: Nginx web root
+- `src/Router.php`: route scoring
+- `src/Collector.php`: Google Directions collection
+- `database/`: schema, seeds, and legacy migration
+- `templates/`: Twig UI
+- `bin/collect.php`: manual and scheduled collector

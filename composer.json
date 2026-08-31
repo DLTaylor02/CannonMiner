@@ -1,0 +1,21 @@
+{
+  "name": "cannonminer/cannonminer",
+  "description": "Traffic-aware Cannonball route explorer",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "ext-pdo": "*",
+    "ext-pdo_pgsql": "*",
+    "guzzlehttp/guzzle": "^7.9",
+    "slim/psr7": "^1.7",
+    "slim/slim": "^4.14",
+    "slim/twig-view": "^3.4"
+  },
+  "autoload": {
+    "psr-4": {"CannonMiner\\": "src/"}
+  },
+  "scripts": {
+    "serve": "php -S 0.0.0.0:8080 -t public",
+    "collect": "php bin/collect.php"
+  }
+}
