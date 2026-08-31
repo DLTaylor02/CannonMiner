@@ -131,8 +131,7 @@ def list_segment_tables() -> List[str]:
         FROM information_schema.tables
         WHERE table_schema = 'public'
           AND table_type = 'BASE TABLE'
-          AND (LEFT(table_name, 8) = 'segment_' OR
-               LEFT(table_name, 16) = 'segmentestimate_')
+          AND LEFT(table_name, 8) = 'segment_'
         ORDER BY table_name
         """
     )
@@ -140,9 +139,7 @@ def list_segment_tables() -> List[str]:
 
 
 def parse_segment_table(table: str) -> Optional[Segment]:
-    if table.startswith("segmentestimate_"):
-        name = table[len("segmentestimate_"):]
-    elif table.startswith("segment_"):
+    if table.startswith("segment_"):
         name = table[len("segment_"):]
     else:
         return None
@@ -184,7 +181,7 @@ def load_samples(table: str) -> List[Sample]:
 
 
 def load_segment_samples() -> Dict[Segment, List[Sample]]:
-    """Combine observed and forecast tables for the same logical segment."""
+    """Load observed samples grouped by logical segment."""
     grouped: Dict[Segment, List[Sample]] = {}
     tables = list_segment_tables()
     for table in tqdm(tables, desc="Loading segment tables", unit="table"):
