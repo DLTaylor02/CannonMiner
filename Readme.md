@@ -14,7 +14,6 @@ run the installer from that checkout:
 
 ```bash
 git clone -b WebUI https://github.com/DLTaylor02/CannonMiner.git
-bash setup.sh
 cd CannonMiner
 cp .env.example .env
 nano .env #define your existing Postgres configuration or desired configuration

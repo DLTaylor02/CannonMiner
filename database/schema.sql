@@ -50,9 +50,22 @@ CREATE TABLE IF NOT EXISTS segments (
     end_node TEXT NOT NULL,
     origin TEXT NOT NULL,
     destination TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'America/New_York',
     travel_mode TEXT NOT NULL DEFAULT 'driving',
     enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
+ALTER TABLE segments ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
+UPDATE segments SET timezone=CASE start_node
+  WHEN 'big' THEN 'America/Denver'
+  WHEN 'stl' THEN 'America/Chicago'
+  WHEN 'nash' THEN 'America/Chicago'
+  WHEN 'den' THEN 'America/Denver'
+  WHEN 'elr' THEN 'America/Chicago'
+  WHEN 'cov' THEN 'America/Denver'
+  WHEN 'bar' THEN 'America/Los_Angeles'
+  ELSE 'America/New_York'
+END WHERE start_node IN ('redball','har','you','cole','coln','big','stl','nash','den','elr','cov','bar')
+  AND timezone='America/New_York';
 
 CREATE TABLE IF NOT EXISTS measurements (
     id BIGSERIAL PRIMARY KEY,

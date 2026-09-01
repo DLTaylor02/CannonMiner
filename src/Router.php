@@ -66,11 +66,13 @@ final class Router
     public function trends(): array
     {
         return $this->pdo->query(<<<'SQL'
-            SELECT s.name,extract(isodow from m.collected_at)::int AS weekday,extract(hour from m.collected_at)::int AS hour,
+            SELECT s.name,s.timezone,
+              extract(isodow from m.collected_at AT TIME ZONE s.timezone)::int AS weekday,
+              extract(hour from m.collected_at AT TIME ZONE s.timezone)::int AS hour,
               count(*)::int AS observations,avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds)) AS avg_delay,
               percentile_cont(.9) WITHIN GROUP (ORDER BY greatest(0,m.duration_in_traffic_seconds-m.duration_seconds)) AS p90_delay
             FROM measurements m JOIN segments s ON s.id=m.segment_id WHERE m.duration_in_traffic_seconds IS NOT NULL
-            GROUP BY s.name,weekday,hour HAVING count(*)>=2 ORDER BY avg_delay DESC LIMIT 30
+            GROUP BY s.name,s.timezone,weekday,hour HAVING count(*)>=2 ORDER BY avg_delay DESC LIMIT 30
         SQL)->fetchAll();
     }
 

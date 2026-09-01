@@ -50,7 +50,8 @@ Go to APIs & Services → Credentials
     Click your new API key → Edit API key
 ✅ Application restrictions
         API restrictions (do this)
-        Select Directions API
+        Select "Directions API" and "Maps Static API"
+        Scroll down and click "Save"
 This means even if someone steals your key they cannot use any other Google API. This is the single biggest safety step.
 
 6️⃣ Set spending protection (do not skip)

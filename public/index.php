@@ -110,7 +110,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);
-    if(preg_match('/^[a-f0-9]{32}$/D',(string)$args['id'])){
+    if(preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id'])){
         $statement=$pdo->prepare('DELETE FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);
     }
     return $response->withHeader('Location','/history')->withStatus(302);
@@ -145,9 +145,10 @@ $app->post('/segments/{id}/toggle', function (Request $request, Response $respon
 })->add($requireAdmin)->add($guard);
 $app->post('/segments',function(Request $request,Response $response)use($pdo,$csrf):Response{
     $csrf($request);$body=(array)$request->getParsedBody();$name=strtolower(trim((string)($body['name']??'')));
-    if(preg_match('/^[a-z0-9]+_to_[a-z0-9]+$/',$name)){
-        [$start,$end]=explode('_to_',$name,2);$statement=$pdo->prepare('INSERT INTO segments(name,start_node,end_node,origin,destination) VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET origin=EXCLUDED.origin,destination=EXCLUDED.destination');
-        $statement->execute([$name,$start,$end,trim((string)$body['origin']),trim((string)$body['destination'])]);
+    $timezone=trim((string)($body['timezone']??'America/New_York'));
+    if(preg_match('/^[a-z0-9]+_to_[a-z0-9]+$/',$name)&&in_array($timezone,DateTimeZone::listIdentifiers(),true)){
+        [$start,$end]=explode('_to_',$name,2);$statement=$pdo->prepare('INSERT INTO segments(name,start_node,end_node,origin,destination,timezone) VALUES (?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET origin=EXCLUDED.origin,destination=EXCLUDED.destination,timezone=EXCLUDED.timezone');
+        $statement->execute([$name,$start,$end,trim((string)$body['origin']),trim((string)$body['destination']),$timezone]);
     }
     return $response->withHeader('Location','/settings')->withStatus(302);
 })->add($requireAdmin)->add($guard);
