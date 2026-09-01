@@ -6,9 +6,26 @@ INSTALL_USER="${SUDO_USER:-$(id -un)}"
 APP_DB_NAME="cannonminer"
 APP_DB_USER="cannonminer"
 DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
+SUDO_KEEPALIVE_PID=""
+PHP_LIMITS_TMP=""
+NGINX_TMP=""
+CRON_TMP=""
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
+stop_sudo_keepalive() {
+  if [ -n "$SUDO_KEEPALIVE_PID" ]; then
+    kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    SUDO_KEEPALIVE_PID=""
+  fi
+}
+cleanup() {
+  stop_sudo_keepalive
+  [ -z "$PHP_LIMITS_TMP" ] || rm -f "$PHP_LIMITS_TMP"
+  [ -z "$NGINX_TMP" ] || rm -f "$NGINX_TMP"
+  [ -z "$CRON_TMP" ] || rm -f "$CRON_TMP"
+}
 as_user() {
   local target="$1"
   shift
@@ -38,9 +55,15 @@ if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
 elif command -v sudo >/dev/null 2>&1; then
   SUDO="sudo"
+  info "Validating sudo access (this should be the only password prompt)"
+  sudo -v
+  (while sleep 50; do sudo -n true || exit; done) &
+  SUDO_KEEPALIVE_PID=$!
 else
   fail "sudo or a root shell is required to install packages and services."
 fi
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 
 if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
   info "Installing PHP, PostgreSQL, Composer, Nginx, and cron"
@@ -68,6 +91,7 @@ if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
     fi
     $SUDO chown -R "$INSTALL_USER":www-data "$DEPLOY_DIR"
     info "Continuing installation from $DEPLOY_DIR"
+    stop_sudo_keepalive
     exec env \
       CANNONMINER_DEPLOYED=1 \
       CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" \
@@ -146,7 +170,6 @@ as_user www-data test -r "$ROOT_DIR/.env" || fail "PHP-FPM cannot read .env; ver
 info "Configuring Nginx"
 NGINX_TMP="$(mktemp)"
 CRON_TMP="$(mktemp)"
-trap 'rm -f "$NGINX_TMP" "$CRON_TMP"' EXIT
 cat > "$NGINX_TMP" <<NGINX
 server {
     listen 80 default_server;

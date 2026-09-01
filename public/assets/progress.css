@@ -1,5 +1,6 @@
 .progress-track { height: 10px; margin-top: 18px; overflow: hidden; background: var(--line); }
 .progress-bar { width: 0; height: 100%; background: var(--green); transition: width .3s; }
+.progress-note { margin:0; color:var(--muted); font-size:13px; }
 .route-map { width:100%; height:100%; min-height:330px; object-fit:cover; }
 .map-unavailable { min-height:330px; display:grid; place-items:center; padding:32px; background:var(--paper); color:var(--muted); text-align:center; }
 .traffic-key { display:flex; align-items:center; gap:8px; margin-top:18px; color:var(--muted); font-size:12px; }

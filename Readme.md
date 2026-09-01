@@ -38,11 +38,14 @@ The script installs and validates dependencies as well as installing the app its
 
 During first-time database setup, the installer optionally prompts for the
 Google Maps API key with hidden input. Press Enter at the prompt to skip it and
-add the key later under WebUI Settings.
+add the key later under WebUI Settings. See `Docs\How to setup API key.md` for
+instructions on how to setup your API key.
 
 When the deployment does not already have an `.env`, setup securely copies the
 one from the source checkout to `/var/www/cannonminer/.env`. If neither location
 has one, setup creates a new `cannonminer` database and application account.
+
+After the script completes, it will tell you the address for the application.
 
 ## Scheduled collection
 

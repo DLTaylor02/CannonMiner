@@ -16,6 +16,10 @@ installs the collector schedule. The script stops on unsupported operating
 systems, old PHP versions, missing extensions, failed service checks, invalid
 Nginx configuration, or an unreadable web root.
 
+When setup is run by a non-root operator it validates sudo once, then refreshes
+that credential timestamp in the background for the duration of installation.
+The keepalive process is stopped during the deployment handoff and on every exit.
+
 Setup removes its temporary Nginx and cron staging files automatically. It
 also synchronizes away obsolete application files in the deployment, while
 preserving `.env`, `vendor/`, and `var/`. `setup.sh`, `composer.json`, and the

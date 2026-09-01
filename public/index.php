@@ -86,7 +86,7 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
     return $render($request,$response,'analysis.twig',['job'=>$job,'can_run'=>(int)$job['user_id']===(int)$identity['id'],'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
-    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,error,result FROM analysis_jobs WHERE id=?');
+    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result FROM analysis_jobs WHERE id=?');
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json');
 })->add($guard);
@@ -116,17 +116,25 @@ $app->post('/history/{id}/delete',function(Request $request,Response $response,a
     return $response->withHeader('Location','/history')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->post('/analysis/{id}/run',function(Request $request,Response $response,array $args)use($pdo,$csrf,$router,&$identity):Response{
-    $csrf($request);$claim=$pdo->prepare("UPDATE analysis_jobs SET status='running',started_at=now(),stage='Loading traffic observations' WHERE id=? AND user_id=? AND status='queued' RETURNING input");
+    $csrf($request);$claim=$pdo->prepare("UPDATE analysis_jobs SET status='running',started_at=now(),updated_at=now(),stage='Loading traffic observations' WHERE id=? AND user_id=? AND status='queued' RETURNING input");
     $claim->execute([$args['id'],$identity['id']]);$input=$claim->fetchColumn();if($input===false)return $response->withStatus(409);
     session_write_close();ignore_user_abort(true);set_time_limit(0);$values=json_decode($input,true,512,JSON_THROW_ON_ERROR);
-    $update=$pdo->prepare('UPDATE analysis_jobs SET progress_current=?,progress_total=?,stage=?,eta_seconds=? WHERE id=?');
+    $update=$pdo->prepare('UPDATE analysis_jobs SET progress_current=?,progress_total=?,stage=?,eta_seconds=?,updated_at=now() WHERE id=?');
+    $jobFinished=false;
+    register_shutdown_function(static function()use(&$jobFinished,$pdo,$args):void{
+        if($jobFinished)return;$fatal=error_get_last();
+        if(!$fatal||!in_array($fatal['type'],[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR],true))return;
+        $statement=$pdo->prepare("UPDATE analysis_jobs SET status='failed',stage='Failed',error=?,updated_at=now(),finished_at=now() WHERE id=? AND status='running'");
+        $statement->execute([substr('PHP worker stopped: '.$fatal['message'],0,2000),$args['id']]);
+    });
     try{
         $results=$router->explore((string)$values['start'],(string)$values['end'],(float)$values['speed'],(string)$values['profile'],(float)$values['risk'],
             static function(int $current,int $total,string $stage,?float $eta=null)use($update,$args):void{$update->execute([$current,max(1,$total),$stage,$eta===null?null:(int)ceil($eta),$args['id']]);});
         foreach($results as &$result)if($result['departure'] instanceof DateTimeInterface)$result['departure']=$result['departure']->format(DATE_ATOM);unset($result);
-        $finish=$pdo->prepare("UPDATE analysis_jobs SET status='complete',progress_current=progress_total,stage='Complete',eta_seconds=0,result=?::jsonb,finished_at=now() WHERE id=?");
+        $finish=$pdo->prepare("UPDATE analysis_jobs SET status='complete',progress_current=progress_total,stage='Complete',eta_seconds=0,result=?::jsonb,updated_at=now(),finished_at=now() WHERE id=?");
         $finish->execute([json_encode($results,JSON_THROW_ON_ERROR),$args['id']]);
-    }catch(Throwable $error){$fail=$pdo->prepare("UPDATE analysis_jobs SET status='failed',stage='Failed',error=?,finished_at=now() WHERE id=?");$fail->execute([substr($error->getMessage(),0,2000),$args['id']]);}
+        $jobFinished=true;
+    }catch(Throwable $error){$fail=$pdo->prepare("UPDATE analysis_jobs SET status='failed',stage='Failed',error=?,updated_at=now(),finished_at=now() WHERE id=?");$fail->execute([substr($error->getMessage(),0,2000),$args['id']]);$jobFinished=true;}
     $response->getBody()->write('{"ok":true}');return $response->withHeader('Content-Type','application/json');
 })->add($guard);
 

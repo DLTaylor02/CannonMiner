@@ -39,7 +39,8 @@ final class Router
         $routes = $this->candidateRoutes($segments, $start, $end, max(1, (int)$this->settings->get('candidate_routes','25')), $mph);
         if ($routes === []) throw new RuntimeException("No route exists from {$start} to {$end}.");
         $departures = $this->departurePatterns($timezone);
-        $total = count($routes)*count($departures); $done = 0; $started = microtime(true);
+        $routeWork=array_sum(array_map('count',$routes));
+        $total = $routeWork*count($departures); $done = 0; $lastReported=0; $started = microtime(true);
         $bestEligible = []; $bestAll = [];
         $compare = static fn(array $a,array $b): int => $profile === 'reliability'
             ? [$a['risk'],$a['expected_seconds']] <=> [$b['risk'],$b['expected_seconds']]
@@ -48,10 +49,10 @@ final class Router
             $evaluation = $this->evaluate($route,$departure,$timezone,$mph);
             $this->retainBest($bestAll,$evaluation,$compare);
             if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
-            $done++;
-            if ($done === $total || $done % 25 === 0) {
+            $done+=count($route);
+            if ($done === $total || $done-$lastReported >= 25) {
                 $elapsed = microtime(true)-$started; $eta = $done ? ($elapsed/$done)*($total-$done) : null;
-                $progress($done,$total,'Scoring route and departure pairs',$eta);
+                $progress($done,$total,'Scoring route segments and departure patterns',$eta);$lastReported=$done;
             }
         }
         $best = $bestEligible ?: $bestAll;
