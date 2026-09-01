@@ -6,7 +6,8 @@ Google Maps content or change the licenses of Composer dependencies.
 
 ## Google Maps Platform
 
-CannonMiner can call the Google Directions API and display the Maps Embed API.
+CannonMiner can call the Google Directions API and display route images with
+the Maps Static API.
 Those services and their returned content are governed by the operator's
 Google Maps Platform agreement, service-specific terms, documentation, billing
 terms, attribution rules, and applicable privacy requirements:
@@ -23,7 +24,7 @@ an administrator confirms that their agreement or separate permission permits
 that use. This confirmation is an operational safeguard, not legal advice or a
 guarantee of compliance.
 
-Google Maps, Directions API, and Maps Embed API are not included in, sponsored
+Google Maps, Directions API, and Maps Static API are not included in, sponsored
 by, or licensed under CannonMiner's MIT License. Attribution rendered by Google
 in embedded maps must not be removed or obscured.
 

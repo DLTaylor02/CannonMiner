@@ -56,7 +56,7 @@ final class Router
         }
         $best = $bestEligible ?: $bestAll;
         foreach ($best as &$evaluation) {
-            $evaluation['map_url'] = $this->mapUrl($evaluation['segments']); unset($evaluation['segments']);
+            $evaluation['map_url'] = $this->mapUrl($evaluation['segments'],$evaluation['segment_risks']); unset($evaluation['segments']);
         }
         unset($evaluation);
         return $best;
@@ -79,7 +79,12 @@ final class Router
             SELECT s.id,s.name,s.start_node,s.end_node,s.origin,s.destination,count(m.id)::int AS sample_count,
               avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))::float AS global_mean,
               percentile_cont(.5) WITHIN GROUP (ORDER BY m.distance_meters)::float AS distance,
-              percentile_cont(.5) WITHIN GROUP (ORDER BY m.duration_seconds)::float AS normal_duration
+              percentile_cont(.5) WITHIN GROUP (ORDER BY m.duration_seconds)::float AS normal_duration,
+              (SELECT latest.raw_payload #>> '{routes,0,overview_polyline,points}'
+               FROM measurements latest
+               WHERE latest.segment_id=s.id
+                 AND latest.raw_payload #>> '{routes,0,overview_polyline,points}' IS NOT NULL
+               ORDER BY latest.collected_at DESC,latest.id DESC LIMIT 1) AS polyline
             FROM segments s JOIN measurements m ON m.segment_id=s.id
             WHERE s.enabled AND m.collected_at IS NOT NULL AND m.duration_in_traffic_seconds>0
               AND m.duration_seconds>0 AND m.distance_meters>0
@@ -91,7 +96,7 @@ final class Router
             $segments[$name]=['id'=>(int)$row['id'],'name'=>$name,'start'=>$row['start_node'],'end'=>$row['end_node'],
                 'origin'=>$row['origin'],'destination'=>$row['destination'],'global_mean'=>(float)$row['global_mean'],
                 'distance'=>(float)$row['distance'],'normal_duration'=>(float)$row['normal_duration'],
-                'buckets'=>[],'all_delays'=>''];
+                'polyline'=>$row['polyline']?:null,'buckets'=>[],'all_delays'=>''];
         }
         if ($segments===[]) return [];
         $total=array_sum(array_map(static fn(array $row)=>(int)$row['sample_count'],$rows));$loaded=0;$started=microtime(true);
@@ -178,7 +183,7 @@ final class Router
         $seedMaterial=implode('|',array_column($route,'name')).'|'.$departure->format('Y-m-d\TH:i:sP');
         $seed=unpack('q',substr(hash('sha256',$seedMaterial,true),0,8))[1];
         $random=new Randomizer(new PcgOneseq128XslRr64($seed));
-        $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);
+        $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);$segmentRisks=[];
         foreach($predictions as [$segment,$prediction,$seconds]){
             $draws=[];$global=$segment['delay_points'];$globalMax=count($global)-1;
             for($i=0;$i<self::RISK_SIMULATIONS;$i++)$draws[$i]=$global[$random->getInt(0,$globalMax)];
@@ -191,14 +196,20 @@ final class Router
                 for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($useLocal[$i])$draws[$i]=$prediction['local_points'][$random->getInt(0,$localMax)];
             }
             $threshold=max(120.0,$prediction['normal']*.05);
-            for($i=0;$i<self::RISK_SIMULATIONS;$i++){$totals[$i]+=$draws[$i];if($draws[$i]>=$threshold)$slow[$i]=true;}
+            $segmentEvents=0;
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++){
+                $totals[$i]+=$draws[$i];
+                if($draws[$i]>=$threshold){$slow[$i]=true;$segmentEvents++;}
+            }
+            $segmentRisk=$segmentEvents/self::RISK_SIMULATIONS;
+            $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk,'color'=>$this->riskColor($segmentRisk)];
         }
         $material=max(300.0,$drive*.02);$events=0;
         for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($slow[$i]||$totals[$i]>=$material)$events++;
         $nodes=array_merge([$route[0]['start']],array_column($route,'end'));
         return ['route'=>implode(' -> ',$nodes),'departure'=>$departure,'drive_seconds'=>$drive,'congestion_seconds'=>$congestion,
             'expected_seconds'=>$drive+$congestion,'risk'=>$events/self::RISK_SIMULATIONS,'distance_miles'=>$distance/self::METERS_PER_MILE,
-            'observations'=>$support,'segments'=>$route];
+            'observations'=>$support,'segments'=>$route,'segment_risks'=>$segmentRisks];
     }
 
     private function empiricalPoints(array $values,?array $weights=null): array
@@ -226,11 +237,24 @@ final class Router
     private function weightedMean(array $values,array $weights): float { $sum=$weight=0.0;foreach($values as $i=>$v){$sum+=$v*$weights[$i];$weight+=$weights[$i];}return$sum/$weight; }
     private function retainBest(array &$best,array $item,callable $compare): void { $best[]=$item;usort($best,$compare);if(count($best)>3)array_pop($best); }
 
-    private function mapUrl(array $route): string
+    private function riskColor(float $risk): string
     {
-        $origin=$route[0]['origin'];$destination=$route[array_key_last($route)]['destination'];
-        $waypoints=array_map(static fn($s)=>$s['destination'],array_slice($route,0,-1));
-        return 'https://www.google.com/maps/embed/v1/directions?'.http_build_query(['key'=>$this->settings->get('google_maps_api_key',''),
-            'origin'=>$origin,'destination'=>$destination,'waypoints'=>implode('|',$waypoints),'mode'=>'driving']);
+        $risk=max(0.0,min(1.0,$risk));
+        if($risk<=.5){$share=$risk*2;$from=[21,148,71];$to=[240,180,41];}
+        else{$share=($risk-.5)*2;$from=[240,180,41];$to=[198,40,40];}
+        $rgb=array_map(static fn(int $start,int $end):int=>(int)round($start+($end-$start)*$share),$from,$to);
+        return sprintf('%02x%02x%02x',...$rgb);
+    }
+
+    private function mapUrl(array $route,array $segmentRisks): ?string
+    {
+        $key=$this->settings->get('google_maps_api_key','');if($key==='')return null;
+        $query=http_build_query(['size'=>'640x360','scale'=>2,'maptype'=>'roadmap','key'=>$key]);$paths=[];
+        foreach($route as $index=>$segment){
+            if(empty($segment['polyline']))continue;
+            $color=$segmentRisks[$index]['color']??'159447';
+            $paths[]='path='.rawurlencode("color:0x{$color}ff|weight:6|enc:{$segment['polyline']}");
+        }
+        return $paths?'https://maps.googleapis.com/maps/api/staticmap?'.$query.'&'.implode('&',$paths):null;
     }
 }

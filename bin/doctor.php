@@ -60,7 +60,7 @@ if ($segments > 0 && $measurements > 0) {
             (float)$settings->get('default_speed_mph', '110'), 'balanced',
             (float)$settings->get('default_max_delay_risk', '.20'));
         $elapsed = microtime(true)-$started;
-        $check(count($results) > 0 && isset($results[0]['expected_seconds'], $results[0]['map_url']),
+        $check(count($results) > 0 && isset($results[0]['expected_seconds']) && array_key_exists('map_url', $results[0]),
             sprintf('Route analysis returned %d results in %.2f seconds', count($results), $elapsed));
         $check(memory_get_peak_usage(true) < 128*1024*1024,
             sprintf('Route analysis peak PHP memory %.1f MB', memory_get_peak_usage(true)/1024/1024));

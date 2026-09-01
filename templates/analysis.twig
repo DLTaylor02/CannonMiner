@@ -5,7 +5,18 @@
 <script>
 const id={{ job.id|json_encode|raw }},token={{ csrf|json_encode|raw }};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function render(items){document.querySelector('h1').textContent='Analysis complete';document.getElementById('progress').hidden=true;document.getElementById('results').innerHTML=items.map((r,i)=>`<article class="result"><div class="result-copy"><p class="rank">${i?'Alternative '+(i+1):'Recommended'}</p><h2>${esc(r.route)}</h2><p class="departure">${esc(new Date(r.departure).toLocaleString())}</p><div class="metrics"><div><strong>${(r.expected_seconds/3600).toFixed(1)}h</strong><span>expected time</span></div><div><strong>${Math.round(r.congestion_seconds/60)}m</strong><span>congestion</span></div><div><strong>${(r.risk*100).toFixed(1)}%</strong><span>delay risk</span></div><div><strong>${Math.round(r.distance_miles)}</strong><span>miles</span></div><div><strong>${r.observations}</strong><span>matching samples</span></div></div></div><iframe title="Route map" src="${esc(r.map_url)}"></iframe></article>`).join('')}
+const eastern=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'long',year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+const segmentName=name=>String(name).replace('_to_',' to ');
+function mapMarkup(r){
+  if(!r.map_url)return '<div class="map-unavailable">No stored route geometry is available yet. Run the collector once, then analyze again.</div>';
+  if(r.map_url.includes('/maps/embed/'))return `<iframe title="Route map" src="${esc(r.map_url)}"></iframe>`;
+  return `<img class="route-map" alt="Traffic-colored route map" src="${esc(r.map_url)}">`;
+}
+function riskMarkup(r){
+  const segments=(r.segment_risks||[]).map(s=>`<span><i style="--segment-color:#${esc(s.color)}"></i>${esc(segmentName(s.name))}: ${(s.risk*100).toFixed(1)}%</span>`).join('');
+  return `<div class="traffic-key"><span>Lower traffic likelihood</span><i class="traffic-scale"></i><span>Higher</span></div>${segments?`<div class="segment-risk">${segments}</div>`:''}`;
+}
+function render(items){document.querySelector('h1').textContent='Analysis complete';document.getElementById('progress').hidden=true;document.getElementById('results').innerHTML=items.map((r,i)=>`<article class="result"><div class="result-copy"><p class="rank">${i?'Alternative '+(i+1):'Recommended'}</p><h2>${esc(r.route)}</h2><p class="departure">Departure pattern: ${esc(eastern.format(new Date(r.departure)))} (New York time)</p><div class="metrics"><div><strong>${(r.expected_seconds/3600).toFixed(1)}h</strong><span>expected time</span></div><div><strong>${Math.round(r.congestion_seconds/60)}m</strong><span>congestion</span></div><div><strong>${(r.risk*100).toFixed(1)}%</strong><span>delay risk</span></div><div><strong>${Math.round(r.distance_miles)}</strong><span>miles</span></div><div><strong>${r.observations}</strong><span>matching samples</span></div></div>${riskMarkup(r)}</div>${mapMarkup(r)}</article>`).join('')}
 async function poll(){const r=await fetch(`/analysis/${id}/status`),j=await r.json(),pct=Math.round(100*j.progress_current/Math.max(1,j.progress_total));document.getElementById('stage').textContent=j.stage;document.getElementById('percent').textContent=pct+'%';document.getElementById('bar').style.width=pct+'%';document.getElementById('eta').textContent=j.eta_seconds?`About ${Math.ceil(j.eta_seconds/60)} min remaining`:'';if(j.status==='complete')return render(typeof j.result==='string'?JSON.parse(j.result):j.result);if(j.status==='failed'){document.getElementById('error').hidden=false;document.getElementById('error').textContent=j.error;return}setTimeout(poll,1000)}
 {% if job.status=='queued' %}fetch(`/analysis/${id}/run`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({_token:token})});{% endif %}poll();
 </script>{% endblock %}

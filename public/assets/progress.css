@@ -1,2 +1,9 @@
 .progress-track { height: 10px; margin-top: 18px; overflow: hidden; background: var(--line); }
 .progress-bar { width: 0; height: 100%; background: var(--green); transition: width .3s; }
+.route-map { width:100%; height:100%; min-height:330px; object-fit:cover; }
+.map-unavailable { min-height:330px; display:grid; place-items:center; padding:32px; background:var(--paper); color:var(--muted); text-align:center; }
+.traffic-key { display:flex; align-items:center; gap:8px; margin-top:18px; color:var(--muted); font-size:12px; }
+.traffic-scale { width:120px; height:8px; background:linear-gradient(90deg,#159447,#f0b429,#c62828); }
+.segment-risk { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:12px; }
+.segment-risk span { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+.segment-risk i { width:10px; height:10px; display:inline-block; background:var(--segment-color); }

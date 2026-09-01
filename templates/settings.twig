@@ -3,7 +3,7 @@
 {% if message %}<p class="success">{{ message }}</p>{% endif %}
 <form method="post" class="settings"><input type="hidden" name="_token" value="{{ csrf }}">
 {% if role=='superadmin' %}
-<label>Google Maps API key {% if google_key_configured %}<span>Saved</span>{% endif %}<input type="password" name="google_maps_api_key" value="{{ google_key_configured?'************':'' }}" placeholder="Enter API key" autocomplete="new-password"></label>
+<label>Google Maps API key {% if google_key_configured %}<span>Saved</span>{% endif %}<input type="password" name="google_maps_api_key" value="{{ google_key_configured?'************':'' }}" placeholder="Directions and Maps Static APIs" autocomplete="new-password"></label>
 <label>Traffic timezone<input name="timezone" value="{{ settings.timezone }}"></label>
 <label>Collection interval <span>minutes</span><input type="number" min="5" max="10080" name="collection_interval_minutes" value="{{ settings.collection_interval_minutes }}"></label>
 <label>Default target speed<input type="number" name="default_speed_mph" value="{{ settings.default_speed_mph }}"></label>

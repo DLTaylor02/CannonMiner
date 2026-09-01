@@ -108,6 +108,9 @@ composer collect
 
 Collection requires a Google Maps API key and explicit confirmation in Settings
 that the operator's Google agreement permits persistent traffic-data storage.
+Enable both the Directions API and Maps Static API for that Google Cloud project.
+Static route previews use stored overview polylines and color each segment from
+green to red according to its simulated likelihood of a nontrivial slowdown.
 
 ## Diagnostics
 
