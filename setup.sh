@@ -9,6 +9,8 @@ DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
 PHP_LIMITS_TMP=""
 NGINX_TMP=""
 CRON_TMP=""
+LEGACY_CRON_TMP=""
+FILTERED_CRON_TMP=""
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -16,6 +18,8 @@ cleanup() {
   [ -z "$PHP_LIMITS_TMP" ] || rm -f "$PHP_LIMITS_TMP"
   [ -z "$NGINX_TMP" ] || rm -f "$NGINX_TMP"
   [ -z "$CRON_TMP" ] || rm -f "$CRON_TMP"
+  [ -z "$LEGACY_CRON_TMP" ] || rm -f "$LEGACY_CRON_TMP"
+  [ -z "$FILTERED_CRON_TMP" ] || rm -f "$FILTERED_CRON_TMP"
 }
 as_user() {
   local target="$1"
@@ -184,6 +188,15 @@ mkdir -p "$ROOT_DIR/var"
 touch "$ROOT_DIR/var/collector.log"
 $SUDO chown -R "$INSTALL_USER":"$(id -gn "$INSTALL_USER")" "$ROOT_DIR/var"
 as_user "$INSTALL_USER" composer licenses --format=json --no-dev > "$ROOT_DIR/var/composer-licenses.json"
+LEGACY_CRON_TMP="$(mktemp)"
+FILTERED_CRON_TMP="$(mktemp)"
+if as_user "$INSTALL_USER" crontab -l > "$LEGACY_CRON_TMP" 2>/dev/null; then
+  grep -Eiv 'run_main\.sh|cannonminer[^[:space:]]*/main\.py' "$LEGACY_CRON_TMP" > "$FILTERED_CRON_TMP" || true
+  if ! cmp -s "$LEGACY_CRON_TMP" "$FILTERED_CRON_TMP"; then
+    as_user "$INSTALL_USER" crontab - < "$FILTERED_CRON_TMP"
+    info "Removed legacy Python collector entries from $INSTALL_USER's crontab"
+  fi
+fi
 printf '%s\n' "* * * * * $INSTALL_USER cd '$ROOT_DIR' && $(command -v php) bin/collect.php --scheduled >> '$ROOT_DIR/var/collector.log' 2>&1" > "$CRON_TMP"
 $SUDO install -m 0644 "$CRON_TMP" /etc/cron.d/cannonminer
 $SUDO systemctl restart cron

@@ -229,7 +229,7 @@ final class Router
         $nodes=array_merge([$route[0]['start']],array_column($route,'end'));
         return ['route'=>implode(' -> ',$nodes),'departure'=>$departure,'drive_seconds'=>$drive,'congestion_seconds'=>$congestion,
             'expected_seconds'=>$drive+$congestion,'risk'=>$events/self::RISK_SIMULATIONS,'distance_miles'=>$distance/self::METERS_PER_MILE,
-            'observations'=>$support,'segments'=>$route,'segment_risks'=>$segmentRisks];
+            'target_speed_mph'=>$mph,'observations'=>$support,'segments'=>$route,'segment_risks'=>$segmentRisks];
     }
 
     private function empiricalPoints(array $values,?array $weights=null): array

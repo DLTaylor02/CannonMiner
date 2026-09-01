@@ -86,7 +86,7 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
     return $render($request,$response,'analysis.twig',['job'=>$job,'can_run'=>(int)$job['user_id']===(int)$identity['id'],'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
-    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result FROM analysis_jobs WHERE id=?');
+    $statement=$pdo->prepare("SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result,input->>'speed' AS target_speed_mph FROM analysis_jobs WHERE id=?");
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json');
 })->add($guard);
@@ -96,6 +96,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
         SELECT * FROM (
           SELECT j.id,u.username,j.status,j.stage,j.created_at,
             j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
+            (j.input->>'speed')::float AS target_speed_mph,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'departure') END AS departure,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
