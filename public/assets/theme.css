@@ -1,3 +1,4 @@
+header { position:sticky; top:0; z-index:100; }
 header select { background:#26312b; border-color:#53605a; color:#fff; }
 html[data-theme="dark"] { color-scheme:dark; --ink:#edf4ef; --muted:#aab8b0; --line:#3d4942; --paper:#111713; --white:#1a221d; --green:#65c99d; --red:#ff8a80; }
 html[data-theme="dark"] header { background:#0b100d; color:#edf4ef; }

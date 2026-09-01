@@ -38,7 +38,8 @@ final class Router
         $segments = $this->loadSegments($timezone,$progress);
         $routes = $this->candidateRoutes($segments, $start, $end, max(1, (int)$this->settings->get('candidate_routes','25')), $mph);
         if ($routes === []) throw new RuntimeException("No route exists from {$start} to {$end}.");
-        $departures = $this->departurePatterns($timezone);
+        $departureInterval=max(5,min(60,(int)$this->settings->get('departure_interval_minutes','15')));
+        $departures = $this->departurePatterns($timezone,$departureInterval);
         $routeWork=array_sum(array_map('count',$routes));
         $total = $routeWork*count($departures); $done = 0; $lastReported=0; $started = microtime(true);
         $bestEligible = []; $bestAll = [];
@@ -46,7 +47,7 @@ final class Router
             ? [$a['risk'],$a['expected_seconds']] <=> [$b['risk'],$b['expected_seconds']]
             : [$a['expected_seconds'],$a['risk']] <=> [$b['expected_seconds'],$b['risk']];
         foreach ($routes as $route) foreach ($departures as $departure) {
-            $evaluation = $this->evaluate($route,$departure,$timezone,$mph);
+            $evaluation = $this->evaluate($route,$departure,$timezone,$mph,$departureInterval);
             $this->retainBest($bestAll,$evaluation,$compare);
             if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
             $done+=count($route);
@@ -56,7 +57,14 @@ final class Router
             }
         }
         $best = $bestEligible ?: $bestAll;
+        $highestSegmentRisk=0.0;
+        foreach($best as $evaluation)foreach($evaluation['segment_risks'] as $segmentRisk)$highestSegmentRisk=max($highestSegmentRisk,$segmentRisk['risk']);
         foreach ($best as &$evaluation) {
+            foreach($evaluation['segment_risks'] as &$segmentRisk){
+                $normalized=$highestSegmentRisk>0?$segmentRisk['risk']/$highestSegmentRisk:0.0;
+                $segmentRisk['color']=$this->riskColor($normalized);
+            }
+            unset($segmentRisk);
             $evaluation['map_url'] = $this->mapUrl($evaluation['segments'],$evaluation['segment_risks']); unset($evaluation['segments']);
         }
         unset($evaluation);
@@ -130,35 +138,44 @@ final class Router
 
     private function candidateRoutes(array $segments,string $start,string $end,int $limit,float $mph): array
     {
-        $adjacent=[]; foreach ($segments as $segment) $adjacent[$segment['start']][]=$segment;
-        $queue=[[[],$start]]; $routes=[];
-        while ($queue && count($routes)<1000) {
-            [$path,$node]=array_shift($queue);
-            if ($node===$end && $path) { $routes[]=$path; continue; }
-            $visited=array_merge([$start],array_column($path,'end'));
-            foreach ($adjacent[$node]??[] as $segment) if (!in_array($segment['end'],$visited,true)) $queue[]=[[...$path,$segment],$segment['end']];
+        $adjacent=[];$reverse=[];
+        foreach($segments as $segment){
+            $segment['candidate_weight']=$segment['distance']/($mph*self::METERS_PER_MILE/3600)+$segment['global_mean'];
+            $adjacent[$segment['start']][]=$segment;$reverse[$segment['end']][]=$segment['start'];
         }
-        $score=static function(array $route)use($mph):float{
-            $total=0.0; foreach($route as $s)$total+=$s['distance']/($mph*self::METERS_PER_MILE/3600)+$s['global_mean']; return $total;
-        };
-        usort($routes,static fn(array $a,array $b):int=>$score($a)<=>$score($b));
-        return array_slice($routes,0,$limit);
+        $canReach=[$end=>true];$pending=[$end];
+        while($pending){$node=array_pop($pending);foreach($reverse[$node]??[] as $previous)if(!isset($canReach[$previous])){$canReach[$previous]=true;$pending[]=$previous;}}
+        if(!isset($canReach[$start]))return[];
+
+        $queue=new \SplPriorityQueue();$queue->setExtractFlags(\SplPriorityQueue::EXTR_DATA);
+        $queue->insert(['node'=>$start,'path'=>[],'visited'=>[$start=>true],'cost'=>0.0],0.0);$routes=[];
+        while(!$queue->isEmpty()&&count($routes)<$limit){
+            $state=$queue->extract();
+            if($state['node']===$end){if($state['path'])$routes[]=$state['path'];continue;}
+            foreach($adjacent[$state['node']]??[] as $segment){
+                $next=$segment['end'];if(isset($state['visited'][$next])||!isset($canReach[$next]))continue;
+                $cost=$state['cost']+$segment['candidate_weight'];$visited=$state['visited'];$visited[$next]=true;
+                $queue->insert(['node'=>$next,'path'=>[...$state['path'],$segment],'visited'=>$visited,'cost'=>$cost],-$cost);
+            }
+        }
+        return$routes;
     }
 
-    private function departurePatterns(DateTimeZone $timezone): array
+    private function departurePatterns(DateTimeZone $timezone,int $intervalMinutes): array
     {
         $dates=$this->representativeDates; ksort($dates); $result=[];
-        foreach($dates as $date)for($slot=0;$slot<48;$slot++)$result[]=$date->setTimezone($timezone)->setTime(0,0)->modify('+'.($slot*30).' minutes');
+        foreach($dates as $date)for($minute=0;$minute<1440;$minute+=$intervalMinutes)$result[]=$date->setTimezone($timezone)->setTime(0,0)->modify('+'.$minute.' minutes');
         usort($result,static fn(DateTimeImmutable $a,DateTimeImmutable $b):int=>$a<=>$b);
         return $result?:[new DateTimeImmutable('now',$timezone)];
     }
 
-    private function prediction(array $segment,DateTimeImmutable $arrival,DateTimeZone $timezone): array
+    private function prediction(array $segment,DateTimeImmutable $arrival,DateTimeZone $timezone,int $intervalMinutes): array
     {
-        $local=$arrival->setTimezone($timezone); $bucketMinute=intdiv((int)$local->format('i'),30)*30;
-        $cacheKey=$segment['name'].'|'.$local->format('N-n-G-').$bucketMinute;
+        $local=$arrival->setTimezone($timezone);$minuteOfDay=(int)$local->format('G')*60+(int)$local->format('i');
+        $bucketMinute=intdiv($minuteOfDay,$intervalMinutes)*$intervalMinutes;
+        $cacheKey=$segment['name'].'|'.$local->format('N-n-').$bucketMinute;
         if(isset($this->predictionCache[$cacheKey]))return $this->unpackPrediction($this->predictionCache[$cacheKey]);
-        $arrivalMinute=(int)$local->format('G')*60+$bucketMinute; $arrivalMonth=(int)$local->format('n'); $weekday=(int)$local->format('N');
+        $arrivalMinute=$bucketMinute; $arrivalMonth=(int)$local->format('n'); $weekday=(int)$local->format('N');
         $values=[];$weights=[];
         for($month=1;$month<=12;$month++)for($delta=-90;$delta<=90;$delta++){
             $minute=($arrivalMinute+$delta+1440)%1440; $key=$month*1000000+$weekday*10000+$minute;
@@ -175,11 +192,11 @@ final class Router
         $this->predictionCache[$cacheKey]=$this->packPrediction($result);return$result;
     }
 
-    private function evaluate(array $route,DateTimeImmutable $departure,DateTimeZone $timezone,float $mph): array
+    private function evaluate(array $route,DateTimeImmutable $departure,DateTimeZone $timezone,float $mph,int $departureInterval): array
     {
         $arrival=$departure;$drive=$congestion=$distance=0.0;$support=0;$predictions=[];
         foreach($route as $segment){
-            $prediction=$this->prediction($segment,$arrival,$timezone);$seconds=$prediction['distance']/($mph*self::METERS_PER_MILE/3600);
+            $prediction=$this->prediction($segment,$arrival,$timezone,$departureInterval);$seconds=$prediction['distance']/($mph*self::METERS_PER_MILE/3600);
             $drive+=$seconds;$congestion+=$prediction['mean'];$distance+=$prediction['distance'];$support+=$prediction['nearby'];
             $predictions[]=[$segment,$prediction,$seconds];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
         }
@@ -205,7 +222,7 @@ final class Router
                 if($draws[$i]>=$threshold){$slow[$i]=true;$segmentEvents++;}
             }
             $segmentRisk=$segmentEvents/self::RISK_SIMULATIONS;
-            $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk,'color'=>$this->riskColor($segmentRisk)];
+            $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk];
         }
         $material=max(300.0,$drive*.02);$events=0;
         for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($slow[$i]||$totals[$i]>=$material)$events++;

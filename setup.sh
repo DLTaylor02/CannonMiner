@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
-INSTALL_USER="${SUDO_USER:-$(id -un)}"
+INSTALL_USER="${CANNONMINER_INSTALL_USER:-${SUDO_USER:-$(id -un)}}"
 APP_DB_NAME="cannonminer"
 APP_DB_USER="cannonminer"
 DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
@@ -45,7 +45,7 @@ esac
 if [ "$(id -u)" -ne 0 ]; then
   command -v sudo >/dev/null 2>&1 || fail "sudo or a root shell is required to install packages and services."
   info "Validating sudo access"
-  exec sudo env CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" CANNONMINER_DEPLOYED="${CANNONMINER_DEPLOYED:-0}" bash "$ROOT_DIR/setup.sh"
+  exec sudo env CANNONMINER_INSTALL_USER="$INSTALL_USER" CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" CANNONMINER_DEPLOYED="${CANNONMINER_DEPLOYED:-0}" bash "$ROOT_DIR/setup.sh"
 fi
 SUDO=""
 trap cleanup EXIT
@@ -78,6 +78,7 @@ if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
     $SUDO chown -R "$INSTALL_USER":www-data "$DEPLOY_DIR"
     info "Continuing installation from $DEPLOY_DIR"
     exec env \
+      CANNONMINER_INSTALL_USER="$INSTALL_USER" \
       CANNONMINER_DEPLOYED=1 \
       CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" \
       bash "$DEPLOY_DIR/setup.sh"
@@ -140,7 +141,7 @@ $SUDO chmod 0640 .env
 
 info "Installing PHP dependencies and database schema"
 if [ "$(id -un)" = "$INSTALL_USER" ]; then
-  composer install --no-dev --optimize-autoloader --no-interaction
+  COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 else
   as_user "$INSTALL_USER" composer install --no-dev --optimize-autoloader --no-interaction
 fi

@@ -18,7 +18,9 @@ Nginx configuration, or an unreadable web root.
 
 When setup is run by a non-root operator it validates sudo once and immediately
 re-executes the complete installer as root. The original operator remains the
-application file owner through `SUDO_USER`.
+application file owner and Composer runs as that operator. If setup is started
+from an actual root login, the installer explicitly authorizes Composer's
+noninteractive superuser mode.
 
 Setup removes its temporary Nginx and cron staging files automatically. It
 also synchronizes away obsolete application files in the deployment, while

@@ -8,6 +8,7 @@
 <label>Collection interval <span>minutes</span><input type="number" min="5" max="10080" name="collection_interval_minutes" value="{{ settings.collection_interval_minutes }}"></label>
 <label>Default target speed<input type="number" name="default_speed_mph" value="{{ settings.default_speed_mph }}"></label>
 <label>Candidate route limit<input type="number" min="1" max="100" name="candidate_routes" value="{{ settings.candidate_routes }}"></label>
+<label>Departure search interval <span>minutes</span><input type="number" min="5" max="60" name="departure_interval_minutes" value="{{ settings.departure_interval_minutes }}"></label>
 <label class="check"><input type="checkbox" name="google_data_storage_authorized" value="yes" {{ settings.google_data_storage_authorized=='yes'?'checked':'' }}><span>I confirm our Google agreement permits persistent storage and analysis of this traffic data.</span></label>
 {% endif %}
 <label>Default maximum risk<input type="number" min="0" max="1" step=".01" name="default_max_delay_risk" value="{{ settings.default_max_delay_risk }}"></label><button>Save settings</button></form>

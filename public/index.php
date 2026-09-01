@@ -157,10 +157,11 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if ($request->getMethod() === 'POST') {
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
         if($identity['role']==='superadmin'){
             $body['collection_interval_minutes']=(string)max(5,min(10080,(int)($body['collection_interval_minutes']??60)));
+            $body['departure_interval_minutes']=(string)max(5,min(60,(int)($body['departure_interval_minutes']??15)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);
         }

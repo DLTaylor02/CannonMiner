@@ -32,3 +32,20 @@ packed buffers rather than replacing them with averages. NumPy's seeded PCG64
 stream is specific to NumPy; until the cross-language parity fixture confirms
 the same recommendation and ordering, small Monte Carlo risk differences must
 be treated as possible rather than silently described as exact parity.
+
+Candidate discovery considers up to 25 routes by default, ordered by free-flow
+drive time plus each segment's historical mean delay. This limit is configurable
+in Settings; the default already exceeds the number of routes in the bundled
+19-segment graph. Departure discovery is the larger search dimension. It covers
+every month/weekday combination present in the observations at configurable
+15-minute intervals by default. This is an intentional increase from the Python
+reference's fixed 30-minute departure grid and will normally make analysis take
+about twice as long. Balanced and Fastest discard route/departure pairs above
+Maximum risk, then rank eligible pairs by expected duration with risk as the tie-breaker.
+Reliability ranks eligible pairs by risk first and expected duration second. If
+no pair meets Maximum risk, the UI returns the best available alternatives so an
+overly strict limit does not produce an empty result.
+
+Segment percentages remain their calculated absolute risks. Their map colors
+are normalized within each analysis: the highest nonzero displayed segment risk
+is red, zero is green, and intermediate risks use the green-yellow-red scale.
