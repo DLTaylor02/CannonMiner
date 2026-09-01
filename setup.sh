@@ -100,7 +100,7 @@ PHP_FPM_SERVICE="$(systemctl list-unit-files 'php*-fpm.service' --no-legend 2>/d
 $SUDO systemctl enable --now "$PHP_FPM_SERVICE"
 PHP_SHORT_VERSION="$(php -r 'echo PHP_MAJOR_VERSION,".",PHP_MINOR_VERSION;')"
 PHP_LIMITS_TMP="$(mktemp)"
-printf '%s\n' 'memory_limit=512M' 'max_execution_time=0' > "$PHP_LIMITS_TMP"
+printf '%s\n' 'memory_limit=512M' 'max_execution_time=0' 'max_input_time=0' > "$PHP_LIMITS_TMP"
 $SUDO install -m 0644 "$PHP_LIMITS_TMP" "/etc/php/$PHP_SHORT_VERSION/fpm/conf.d/99-cannonminer.ini"
 $SUDO install -m 0644 "$PHP_LIMITS_TMP" "/etc/php/$PHP_SHORT_VERSION/cli/conf.d/99-cannonminer.ini"
 rm -f "$PHP_LIMITS_TMP"
