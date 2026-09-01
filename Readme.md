@@ -119,8 +119,7 @@ composer test
 ```
 
 The diagnostic checks PHP and required extensions, PostgreSQL connectivity,
-schema tables, required PHP extensions (including sodium for reference-compatible
-Blake2b seeds), settings, administrator and segment records, collected
+schema tables, required PHP extensions, settings, administrator and segment records, collected
 measurements, and a complete `redball` to `portofino` route analysis. The route
 smoke test reports elapsed time and fails if peak PHP memory reaches the
 standard 128 MB PHP-FPM limit. It is read-only and does not call Google or
@@ -138,7 +137,7 @@ target so the larger limit remains operational headroom.
 Every user can select Light, Dark, or Adaptive appearance from the header.
 Preferences are stored per account.
 
-- Superadmins can manage all settings, segments, and users, including other superadmins.
+- The single install-created superadmin can manage all settings, segments, and users. Its role cannot be assigned, removed, or transferred in the WebUI.
 - Web admins can manage segments, users, and the default maximum risk. They cannot read or change the Google key, collection interval, or other collection settings.
 - Users can run route analysis and view avoid trends. Route jobs always enforce the configured maximum risk for this role.
 

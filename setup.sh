@@ -80,7 +80,6 @@ command -v composer >/dev/null 2>&1 || fail "Composer installation failed."
 command -v psql >/dev/null 2>&1 || fail "PostgreSQL client installation failed."
 php -r 'exit(version_compare(PHP_VERSION, "8.2.0", ">=") ? 0 : 1);' || fail "PHP 8.2+ is required; found $(php -r 'echo PHP_VERSION;')."
 php -r 'exit(extension_loaded("pdo_pgsql") ? 0 : 1);' || fail "PHP extension pdo_pgsql is not enabled."
-php -r 'exit(extension_loaded("sodium") ? 0 : 1);' || fail "PHP extension sodium is not enabled."
 COMPOSER_VERSION="$(composer --version --no-ansi | awk '{print $3}')"
 php -r 'exit(version_compare($argv[1], "2.0.0", ">=") ? 0 : 1);' "$COMPOSER_VERSION" || fail "Composer 2+ is required; found $COMPOSER_VERSION."
 

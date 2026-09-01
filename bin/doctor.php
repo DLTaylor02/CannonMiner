@@ -16,7 +16,7 @@ $check = static function (bool $passed, string $message) use (&$failures): void 
 
 echo "CannonMiner diagnostics\n\n";
 $check(version_compare(PHP_VERSION, '8.2.0', '>='), 'PHP 8.2+ (' . PHP_VERSION . ')');
-foreach (['pdo', 'pdo_pgsql', 'json', 'mbstring', 'sodium'] as $extension) {
+foreach (['pdo', 'pdo_pgsql', 'json', 'mbstring'] as $extension) {
     $check(extension_loaded($extension), "PHP extension {$extension}");
 }
 

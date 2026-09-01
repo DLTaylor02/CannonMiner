@@ -176,7 +176,7 @@ final class Router
             $predictions[]=[$segment,$prediction,$seconds];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
         }
         $seedMaterial=implode('|',array_column($route,'name')).'|'.$departure->format('Y-m-d\TH:i:sP');
-        $seed=unpack('q',sodium_crypto_generichash($seedMaterial,'',8))[1];
+        $seed=unpack('q',substr(hash('sha256',$seedMaterial,true),0,8))[1];
         $random=new Randomizer(new PcgOneseq128XslRr64($seed));
         $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);
         foreach($predictions as [$segment,$prediction,$seconds]){

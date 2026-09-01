@@ -63,6 +63,7 @@ $app->post('/theme', function(Request $request,Response $response)use($pdo,$csrf
     $statement=$pdo->prepare('UPDATE users SET theme=? WHERE id=?');$statement->execute([$theme,$identity['id']]);
     return $response->withHeader('Location',$request->getHeaderLine('Referer')?:'/')->withStatus(302);
 })->add($guard);
+$app->get('/favicon.ico', static fn(Request $request,Response $response):Response => $response->withStatus(204));
 
 $app->map(['GET','POST'], '/', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
     $nodes = $router->nodes(); $input = ['start'=>'redball','end'=>'portofino','speed'=>(float)$settings->get('default_speed_mph','110'),
@@ -140,7 +141,7 @@ $app->map(['GET','POST'],'/users',function(Request $request,Response $response)u
     $message=$error=null;
     if($request->getMethod()==='POST'){
         $csrf($request);$body=(array)$request->getParsedBody();$role=(string)($body['role']??'user');
-        $allowed=$identity['role']==='superadmin'?['user','admin','superadmin']:['user','admin'];
+        $allowed=['user','admin'];
         if(!in_array($role,$allowed,true))$error='That role cannot be assigned.';
         elseif(strlen((string)($body['password']??''))<12)$error='Password must be at least 12 characters.';
         else try{$statement=$pdo->prepare('INSERT INTO users(username,password_hash,role) VALUES (?,?,?)');
@@ -151,17 +152,16 @@ $app->map(['GET','POST'],'/users',function(Request $request,Response $response)u
 })->add($requireAdmin)->add($guard);
 $app->post('/users/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);$statement=$pdo->prepare('SELECT role FROM users WHERE id=?');$statement->execute([(int)$args['id']]);$target=$statement->fetchColumn();
-    if((int)$args['id']!== (int)$identity['id']&&$target!==false&&($target!=='superadmin'||$identity['role']==='superadmin')){
+    if((int)$args['id']!== (int)$identity['id']&&$target!==false&&$target!=='superadmin'){
         $delete=$pdo->prepare('DELETE FROM users WHERE id=?');$delete->execute([(int)$args['id']]);
     }
     return $response->withHeader('Location','/users')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->post('/users/{id}',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);$id=(int)$args['id'];$lookup=$pdo->prepare('SELECT role FROM users WHERE id=?');$lookup->execute([$id]);$current=$lookup->fetchColumn();
-    if($current===false||($current==='superadmin'&&$identity['role']!=='superadmin'))return $response->withHeader('Location','/users')->withStatus(302);
-    $body=(array)$request->getParsedBody();$role=(string)($body['role']??$current);$allowed=$identity['role']==='superadmin'?['user','admin','superadmin']:['user','admin'];
+    if($current===false||($current==='superadmin'&&(int)$identity['id']!==$id))return $response->withHeader('Location','/users')->withStatus(302);
+    $body=(array)$request->getParsedBody();$role=$current==='superadmin'?'superadmin':(string)($body['role']??$current);$allowed=['user','admin'];
     if(!in_array($role,$allowed,true))$role=(string)$current;
-    if($current==='superadmin'&&$role!=='superadmin'&&(int)$pdo->query("SELECT count(*) FROM users WHERE role='superadmin'")->fetchColumn()<=1)$role='superadmin';
     $password=(string)($body['password']??'');
     if($password!==''&&strlen($password)>=12){$update=$pdo->prepare('UPDATE users SET role=?,password_hash=? WHERE id=?');$update->execute([$role,password_hash($password,PASSWORD_DEFAULT),$id]);}
     else{$update=$pdo->prepare('UPDATE users SET role=? WHERE id=?');$update->execute([$role,$id]);}

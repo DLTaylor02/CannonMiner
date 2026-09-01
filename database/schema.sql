@@ -18,7 +18,11 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE role='superadmin') AND EXISTS (SELECT 1 FROM users) THEN
     UPDATE users SET role='superadmin' WHERE id=(SELECT min(id) FROM users);
   END IF;
+  UPDATE users SET role='admin'
+  WHERE role='superadmin'
+    AND id<>(SELECT min(id) FROM users WHERE role='superadmin');
 END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS users_single_superadmin_idx ON users ((role)) WHERE role='superadmin';
 
 CREATE TABLE IF NOT EXISTS analysis_jobs (
     id UUID PRIMARY KEY,
