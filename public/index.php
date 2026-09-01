@@ -88,7 +88,7 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
     $statement=$pdo->prepare("SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result,input->>'speed' AS target_speed_mph FROM analysis_jobs WHERE id=?");
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
-    $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json');
+    $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
