@@ -29,9 +29,10 @@ Important clarifications:
 
 3️⃣ Enable the correct API (this matters)
 Go to APIs & Services → Library
-    Search for Directions API
+    Search for "Directions API"
     Click it
     Click Enable
+    Do the same for "Maps Static API"
 🚫 You do not need:
     Maps JavaScript API
     Places API

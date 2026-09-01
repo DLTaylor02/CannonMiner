@@ -81,15 +81,40 @@ $app->map(['GET','POST'], '/', function (Request $request, Response $response) u
 })->add($guard);
 
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
-    $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);$job=$statement->fetch();
+    $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();
     if(!$job)return $response->withStatus(404);
-    return $render($request,$response,'analysis.twig',['job'=>$job,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'analysis.twig',['job'=>$job,'can_run'=>(int)$job['user_id']===(int)$identity['id'],'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
-$app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo,&$identity):Response{
-    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,error,result FROM analysis_jobs WHERE id=? AND user_id=?');
-    $statement->execute([$args['id'],$identity['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
+$app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
+    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,error,result FROM analysis_jobs WHERE id=?');
+    $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json');
 })->add($guard);
+
+$app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
+    $runs=$pdo->query(<<<'SQL'
+        SELECT * FROM (
+          SELECT j.id,u.username,j.status,j.stage,j.created_at,
+            j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
+            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
+              THEN (j.result->0->>'departure') END AS departure,
+            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
+              THEN (j.result->0->>'risk')::float END AS risk,
+            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
+              THEN (j.result->0->>'expected_seconds')::float END AS expected_seconds
+          FROM analysis_jobs j JOIN users u ON u.id=j.user_id
+        ) history
+        ORDER BY (status='complete') DESC,risk ASC NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC
+    SQL)->fetchAll();
+    return $render($request,$response,'history.twig',['runs'=>$runs,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+$app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
+    $csrf($request);
+    if(preg_match('/^[a-f0-9]{32}$/D',(string)$args['id'])){
+        $statement=$pdo->prepare('DELETE FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);
+    }
+    return $response->withHeader('Location','/history')->withStatus(302);
+})->add($requireAdmin)->add($guard);
 $app->post('/analysis/{id}/run',function(Request $request,Response $response,array $args)use($pdo,$csrf,$router,&$identity):Response{
     $csrf($request);$claim=$pdo->prepare("UPDATE analysis_jobs SET status='running',started_at=now(),stage='Loading traffic observations' WHERE id=? AND user_id=? AND status='queued' RETURNING input");
     $claim->execute([$args['id'],$identity['id']]);$input=$claim->fetchColumn();if($input===false)return $response->withStatus(409);

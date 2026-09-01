@@ -1,3 +1,4 @@
 .inline-user { display:flex; gap:8px; align-items:center; }
 .inline-user :is(select,input) { min-width:120px; }
+.table-wrap a { color:var(--green); font-weight:700; }
 @media(max-width:700px) { .inline-user { align-items:stretch; flex-direction:column; } }

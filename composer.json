@@ -17,6 +17,7 @@
   "scripts": {
     "serve": "php -S 0.0.0.0:8080 -t public",
     "collect": "php bin/collect.php",
+    "reset-superadmin-password": "php bin/reset-superadmin-password.php",
     "test": "php bin/doctor.php"
   }
 }
