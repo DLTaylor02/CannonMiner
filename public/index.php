@@ -25,7 +25,7 @@ if (isset($_SESSION['user_id'])) {
 
 $render = static function (Request $request, Response $response, string $template, array $data = []) use ($twig,&$identity): Response {
     return $twig->render($response, $template, $data + ['user'=>$identity['username']??null,'user_id'=>$identity['id']??null,
-        'role'=>$identity['role']??null,'theme'=>$identity['theme']??'adaptive']);
+        'role'=>$identity['role']??null,'theme'=>$identity['theme']??'adaptive'])->withHeader('Cache-Control','private, no-store');
 };
 $guard = static function (Request $request, RequestHandlerInterface $handler) use (&$identity): Response {
     if ($identity) return $handler->handle($request);
@@ -81,7 +81,7 @@ $app->map(['GET','POST'], '/', function (Request $request, Response $response) u
 })->add($guard);
 
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
-    $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();
+    $statement=$pdo->prepare("SELECT *,input->>'speed' AS target_speed_mph FROM analysis_jobs WHERE id=?");$statement->execute([$args['id']]);$job=$statement->fetch();
     if(!$job)return $response->withStatus(404);
     return $render($request,$response,'analysis.twig',['job'=>$job,'can_run'=>(int)$job['user_id']===(int)$identity['id'],'csrf'=>$_SESSION['csrf']]);
 })->add($guard);

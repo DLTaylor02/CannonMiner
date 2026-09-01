@@ -1,5 +1,5 @@
 {% extends 'layout.twig' %}{% block title %}Analysis | CannonMiner{% endblock %}{% block content %}
-<section class="page-head"><div><p class="kicker">Route intelligence</p><h1>Analyzing route</h1></div></section>
+<section class="page-head"><div><p class="kicker">Route intelligence</p><h1>Analyzing route</h1></div><p>Target average speed: <strong>{{ job.target_speed_mph|number_format(1) }} mph</strong></p></section>
 <div id="progress" class="panel"><strong id="stage">{{ job.stage }}</strong><div class="progress-track"><div id="bar" class="progress-bar"></div></div><p><span id="percent">0%</span> <span id="eta"></span></p><p id="heartbeat" class="progress-note" hidden></p></div>
 <div id="error" class="alert" hidden></div><div id="results"></div>
 <script>
