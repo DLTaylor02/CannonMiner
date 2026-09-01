@@ -14,7 +14,14 @@ database login, writes the bootstrap connection to `.env`, migrates the schema,
 prompts for the first WebUI administrator, configures Nginx/PHP-FPM, and
 installs the collector schedule. The script stops on unsupported operating
 systems, old PHP versions, missing extensions, failed service checks, invalid
-Nginx configuration, or an unreadable web root.
+Nginx configuration, an occupied requested port, or an unreadable web root.
+
+CannonMiner listens on port `3636` by default. Setup prompts for a custom port
+and preserves the existing CannonMiner port when an installation is upgraded.
+Noninteractive installations use `3636`, or the existing port on upgrades;
+`CANNONMINER_LISTEN_PORT` can supply an explicit value. The generated site does
+not claim Nginx's `default_server`, remove the default-site symlink, or edit any
+other application's server block.
 
 Before installing `/etc/cron.d/cannonminer`, setup removes active or commented
 legacy Python collector entries that invoke `run_main.sh` or CannonMiner's

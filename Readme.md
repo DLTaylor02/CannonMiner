@@ -32,6 +32,12 @@ The script installs and validates dependencies as well as installing the app its
 - Nginx
 - cron
 
+During installation, setup asks which Nginx port CannonMiner should use. Press
+Enter to accept port `3636`. CannonMiner is installed as an independent Nginx
+site and does not replace, disable, or modify existing sites. Choose another
+unused port if `3636` is already occupied. The port may also need to be allowed
+through the server firewall.
+
 See `Docs\How to setup API key.md` for instructions on how to setup your API key.
 During first-time database setup, the installer prompts for the Google Maps API
 key with hidden input. You can enter the API key at this time or press Enter to
@@ -41,7 +47,8 @@ When the deployment does not already have an `.env`, setup securely copies the
 one from the source checkout to `/var/www/cannonminer/.env`. If neither location
 has one, setup creates a new `cannonminer` database and application account.
 
-After the script completes, it will tell you the address for the application.
+After the script completes, it prints the address including the selected port,
+for example `http://192.168.1.106:3636/`.
 
 ## Diagnostics
 

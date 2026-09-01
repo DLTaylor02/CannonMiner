@@ -6,6 +6,7 @@ INSTALL_USER="${CANNONMINER_INSTALL_USER:-${SUDO_USER:-$(id -un)}}"
 APP_DB_NAME="cannonminer"
 APP_DB_USER="cannonminer"
 DEPLOY_DIR="${CANNONMINER_INSTALL_DIR:-/var/www/cannonminer}"
+LISTEN_PORT="${CANNONMINER_LISTEN_PORT:-}"
 PHP_LIMITS_TMP=""
 NGINX_TMP=""
 CRON_TMP=""
@@ -49,7 +50,7 @@ esac
 if [ "$(id -u)" -ne 0 ]; then
   command -v sudo >/dev/null 2>&1 || fail "sudo or a root shell is required to install packages and services."
   info "Validating sudo access"
-  exec sudo env CANNONMINER_INSTALL_USER="$INSTALL_USER" CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" CANNONMINER_DEPLOYED="${CANNONMINER_DEPLOYED:-0}" bash "$ROOT_DIR/setup.sh"
+  exec sudo env CANNONMINER_INSTALL_USER="$INSTALL_USER" CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" CANNONMINER_LISTEN_PORT="$LISTEN_PORT" CANNONMINER_DEPLOYED="${CANNONMINER_DEPLOYED:-0}" bash "$ROOT_DIR/setup.sh"
 fi
 SUDO=""
 trap cleanup EXIT
@@ -85,9 +86,28 @@ if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
       CANNONMINER_INSTALL_USER="$INSTALL_USER" \
       CANNONMINER_DEPLOYED=1 \
       CANNONMINER_INSTALL_DIR="$DEPLOY_DIR" \
+      CANNONMINER_LISTEN_PORT="$LISTEN_PORT" \
       bash "$DEPLOY_DIR/setup.sh"
   fi
 fi
+
+if [ -z "$LISTEN_PORT" ]; then
+  EXISTING_PORT=""
+  if [ -f /etc/nginx/sites-available/cannonminer ]; then
+    EXISTING_PORT="$(sed -nE 's/^[[:space:]]*listen[[:space:]]+([0-9]+);.*/\1/p' /etc/nginx/sites-available/cannonminer | head -n 1)"
+  fi
+  DEFAULT_PORT="${EXISTING_PORT:-3636}"
+  if [ -t 0 ]; then
+    printf 'Nginx listen port [%s]: ' "$DEFAULT_PORT"
+    IFS= read -r LISTEN_PORT || fail "Unable to read the Nginx listen port."
+    LISTEN_PORT="${LISTEN_PORT:-$DEFAULT_PORT}"
+  else
+    LISTEN_PORT="$DEFAULT_PORT"
+    info "Using Nginx port $LISTEN_PORT (noninteractive installation)"
+  fi
+fi
+case "$LISTEN_PORT" in ''|*[!0-9]*) fail "Nginx listen port must be a number from 1 to 65535." ;; esac
+[ "$LISTEN_PORT" -ge 1 ] && [ "$LISTEN_PORT" -le 65535 ] || fail "Nginx listen port must be from 1 to 65535."
 
 command -v php >/dev/null 2>&1 || fail "PHP installation did not provide a php executable."
 command -v composer >/dev/null 2>&1 || fail "Composer installation failed."
@@ -158,12 +178,31 @@ as_user www-data test -r "$ROOT_DIR/public/index.php" || fail "Nginx cannot read
 as_user www-data test -r "$ROOT_DIR/.env" || fail "PHP-FPM cannot read .env; verify its installer:www-data ownership and parent-directory access."
 
 info "Configuring Nginx"
+for ENABLED_SITE in /etc/nginx/sites-enabled/*; do
+  [ -e "$ENABLED_SITE" ] || continue
+  [ "$(realpath -m "$ENABLED_SITE")" = "$(realpath -m /etc/nginx/sites-available/cannonminer)" ] && continue
+  if grep -Eq "^[[:space:]]*listen[^;]*([[:space:]:])${LISTEN_PORT}([[:space:]]|;)" "$ENABLED_SITE"; then
+    fail "Port $LISTEN_PORT is already configured by Nginx site $ENABLED_SITE. Rerun setup and choose a different port."
+  fi
+done
+PORT_IN_USE=0
+if command -v ss >/dev/null 2>&1 && ss -H -ltn | awk -v port=":$LISTEN_PORT" '$4 ~ (port "$") {found=1} END {exit !found}'; then
+  PORT_IN_USE=1
+fi
+OWN_SITE_USES_PORT=0
+if [ -f /etc/nginx/sites-available/cannonminer ] \
+  && grep -Eq "^[[:space:]]*listen[^;]*([[:space:]:])${LISTEN_PORT}([[:space:]]|;)" /etc/nginx/sites-available/cannonminer; then
+  OWN_SITE_USES_PORT=1
+fi
+if [ "$PORT_IN_USE" -eq 1 ] && [ "$OWN_SITE_USES_PORT" -eq 0 ]; then
+  fail "Port $LISTEN_PORT is already in use by another service. Rerun setup and choose a different port."
+fi
 NGINX_TMP="$(mktemp)"
 CRON_TMP="$(mktemp)"
 cat > "$NGINX_TMP" <<NGINX
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen $LISTEN_PORT;
+    listen [::]:$LISTEN_PORT;
     server_name _;
     root "$ROOT_DIR/public";
     index index.php;
@@ -179,7 +218,6 @@ server {
 NGINX
 $SUDO install -m 0644 "$NGINX_TMP" /etc/nginx/sites-available/cannonminer
 $SUDO ln -sfn /etc/nginx/sites-available/cannonminer /etc/nginx/sites-enabled/cannonminer
-$SUDO rm -f /etc/nginx/sites-enabled/default
 $SUDO nginx -t || fail "Nginx rejected the generated configuration."
 $SUDO systemctl reload nginx
 
@@ -210,5 +248,5 @@ $SUDO systemctl is-active --quiet cron || fail "cron is not running."
 
 APP_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo
-echo "CannonMiner is installed at http://${APP_IP:-localhost}/"
+echo "CannonMiner is installed at http://${APP_IP:-localhost}:$LISTEN_PORT/"
 echo "Review the collection interval, Google API key, and collection authorization in WebUI Settings."

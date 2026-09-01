@@ -169,7 +169,12 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         }
         $settings->save($body);$message='Settings saved.';
     }
-    $lastRun=$pdo->query('SELECT * FROM collection_runs ORDER BY started_at DESC LIMIT 1')->fetch();
+    $lastRun=$pdo->query(<<<'SQL'
+        SELECT *,to_char(finished_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS finished_at_iso
+        FROM collection_runs
+        WHERE status='success' AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC LIMIT 1
+    SQL)->fetch();
     $values=$settings->all(); $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($requireAdmin)->add($guard);

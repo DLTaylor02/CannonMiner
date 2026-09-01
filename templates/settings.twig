@@ -12,7 +12,15 @@
 <label class="check"><input type="checkbox" name="google_data_storage_authorized" value="yes" {{ settings.google_data_storage_authorized=='yes'?'checked':'' }}><span>I confirm our Google agreement permits persistent storage and analysis of this traffic data.</span></label>
 {% endif %}
 <label>Default maximum risk<input type="number" min="0" max="1" step=".01" name="default_max_delay_risk" value="{{ settings.default_max_delay_risk }}"></label><button>Save settings</button></form>
-{% if last_run %}<p>Last collection: <strong>{{ last_run.status }}</strong> at {{ last_run.started_at|date('Y-m-d H:i T') }}{% if last_run.segments_collected %}, {{ last_run.segments_collected }} segments{% endif %}.</p>{% endif %}
+{% if last_run %}<p>Last successful collection: <time id="last-collection" datetime="{{ last_run.finished_at_iso }}">{{ last_run.finished_at_iso }}</time> <span id="collection-timezone">(browser local time)</span>{% if last_run.segments_collected %}, {{ last_run.segments_collected }} segments{% endif %}.</p>
+<script>
+const collectionTime=document.getElementById('last-collection'),collectionZone=document.getElementById('collection-timezone');
+if(collectionTime){
+  const instant=new Date(collectionTime.dateTime),zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'local timezone';
+  collectionTime.textContent=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'}).format(instant);
+  collectionZone.textContent=`(browser local time: ${zone})`;
+}
+</script>{% endif %}
 <h2 class="section-title">Add or update segment</h2>
 <form method="post" action="/segments" class="settings"><input type="hidden" name="_token" value="{{ csrf }}"><label>Name <span>start_to_end</span><input name="name" pattern="[a-z0-9]+_to_[a-z0-9]+" required></label><label>Origin<input name="origin" required></label><label>Destination<input name="destination" required></label><label>Origin timezone <span>IANA name</span><input name="timezone" value="America/New_York" required></label><button>Save segment</button></form>
 <h2 class="section-title">Route segments</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Origin</th><th>Destination</th><th>Origin timezone</th><th>Status</th><th></th></tr></thead><tbody>{% for row in segments %}<tr><td><strong>{{ row.name }}</strong></td><td>{{ row.origin }}</td><td>{{ row.destination }}</td><td>{{ row.timezone }}</td><td>{{ row.enabled?'Enabled':'Disabled' }}</td><td><form method="post" action="/segments/{{ row.id }}/toggle"><input type="hidden" name="_token" value="{{ csrf }}"><button class="small">{{ row.enabled?'Disable':'Enable' }}</button></form></td></tr>{% endfor %}</tbody></table></div>
