@@ -16,7 +16,7 @@ bash setup.sh
 cd CannonMiner
 cp .env.example .env
 nano .env            #define your existing Postgres configuration here or desired configuration
-chmod +x ./setup.sh
+chmod +x setup.sh
 ./setup.sh
 ```
 
@@ -108,6 +108,52 @@ composer collect
 
 Collection requires a Google Maps API key and explicit confirmation in Settings
 that the operator's Google agreement permits persistent traffic-data storage.
+
+## Diagnostics
+
+Run the installed-system test suite after setup or an upgrade:
+
+```bash
+cd /var/www/cannonminer
+composer test
+```
+
+The diagnostic checks PHP and required extensions, PostgreSQL connectivity,
+schema tables, required PHP extensions (including sodium for reference-compatible
+Blake2b seeds), settings, administrator and segment records, collected
+measurements, and a complete `redball` to `portofino` route analysis. The route
+smoke test reports elapsed time and fails if peak PHP memory reaches the
+standard 128 MB PHP-FPM limit. It is read-only and does not call Google or
+collect billable data.
+
+Route analysis runs as a persisted job. The browser reports observation-loading
+and scoring progress, estimated time remaining, and retains completed results
+across refreshes. Setup configures PHP CLI and PHP-FPM with a 512 MB memory
+limit, unlimited analysis execution time, and a one-hour Nginx FastCGI timeout.
+The packed observation model is still tested against a 128 MB peak-memory
+target so the larger limit remains operational headroom.
+
+## Users and themes
+
+Every user can select Light, Dark, or Adaptive appearance from the header.
+Preferences are stored per account.
+
+- Superadmins can manage all settings, segments, and users, including other superadmins.
+- Web admins can manage segments, users, and the default maximum risk. They cannot read or change the Google key, collection interval, or other collection settings.
+- Users can run route analysis and view avoid trends. Route jobs always enforce the configured maximum risk for this role.
+
+The first account created by setup is a superadmin. On upgrade, the oldest
+existing account is promoted only when no superadmin exists.
+
+## Router parity
+
+`router.py` remains the behavioral reference for traffic weighting, empirical
+quantiles, arrival propagation, risk thresholds, simulation count, eligibility,
+and ranking. The PHP implementation retains raw delay distributions in compact
+packed buffers rather than replacing them with averages. NumPy's seeded PCG64
+stream is specific to NumPy; until the cross-language parity fixture confirms
+the same recommendation and ordering, small Monte Carlo risk differences must
+be treated as possible rather than silently described as exact parity.
 
 ## Configuration and security
 

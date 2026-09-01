@@ -16,6 +16,7 @@
   },
   "scripts": {
     "serve": "php -S 0.0.0.0:8080 -t public",
-    "collect": "php bin/collect.php"
+    "collect": "php bin/collect.php",
+    "test": "php bin/doctor.php"
   }
 }

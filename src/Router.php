@@ -6,11 +6,17 @@ namespace CannonMiner;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Randomizer;
 use RuntimeException;
 
 final class Router
 {
     private const METERS_PER_MILE = 1609.344;
+    private const RISK_SIMULATIONS = 1024;
+    private const EMPIRICAL_POINTS = 64;
+    private array $representativeDates = [];
+    private array $predictionCache = [];
 
     public function __construct(private PDO $pdo, private Settings $settings) {}
 
@@ -20,159 +26,211 @@ final class Router
         return array_column($rows, 'node');
     }
 
-    public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk): array
+    public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null): array
     {
-        if ($mph <= 0 || $maxRisk < 0 || $maxRisk > 1 || !in_array($profile, ['balanced', 'fastest', 'reliability'], true)) {
+        if ($mph <= 0 || $maxRisk < 0 || $maxRisk > 1 || !in_array($profile, ['balanced','fastest','reliability'], true)) {
             throw new RuntimeException('Invalid routing options.');
         }
-        $segments = $this->loadSegments();
-        $routes = $this->candidateRoutes($segments, $start, $end, (int) $this->settings->get('candidate_routes', '25'), $mph);
-        if ($routes === []) {
-            throw new RuntimeException("No route exists from {$start} to {$end}.");
-        }
+        $progress ??= static function (): void {};
         $timezone = new DateTimeZone($this->settings->get('timezone', 'America/New_York'));
-        $departures = $this->departurePatterns($segments, $timezone);
-        $evaluations = [];
-        foreach ($routes as $route) {
-            foreach ($departures as $departure) {
-                $evaluations[] = $this->evaluate($route, $departure, $timezone, $mph);
+        $this->representativeDates = []; $this->predictionCache = [];
+        $progress(0,1,'Loading traffic observations');
+        $segments = $this->loadSegments($timezone,$progress);
+        $routes = $this->candidateRoutes($segments, $start, $end, max(1, (int)$this->settings->get('candidate_routes','25')), $mph);
+        if ($routes === []) throw new RuntimeException("No route exists from {$start} to {$end}.");
+        $departures = $this->departurePatterns($timezone);
+        $total = count($routes)*count($departures); $done = 0; $started = microtime(true);
+        $bestEligible = []; $bestAll = [];
+        $compare = static fn(array $a,array $b): int => $profile === 'reliability'
+            ? [$a['risk'],$a['expected_seconds']] <=> [$b['risk'],$b['expected_seconds']]
+            : [$a['expected_seconds'],$a['risk']] <=> [$b['expected_seconds'],$b['risk']];
+        foreach ($routes as $route) foreach ($departures as $departure) {
+            $evaluation = $this->evaluate($route,$departure,$timezone,$mph);
+            $this->retainBest($bestAll,$evaluation,$compare);
+            if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
+            $done++;
+            if ($done === $total || $done % 25 === 0) {
+                $elapsed = microtime(true)-$started; $eta = $done ? ($elapsed/$done)*($total-$done) : null;
+                $progress($done,$total,'Scoring route and departure pairs',$eta);
             }
         }
-        usort($evaluations, static function (array $a, array $b) use ($profile, $maxRisk): int {
-            $aEligible = $a['risk'] <= $maxRisk; $bEligible = $b['risk'] <= $maxRisk;
-            if ($aEligible !== $bEligible) return $aEligible ? -1 : 1;
-            return $profile === 'reliability'
-                ? [$a['risk'], $a['expected_seconds']] <=> [$b['risk'], $b['expected_seconds']]
-                : [$a['expected_seconds'], $a['risk']] <=> [$b['expected_seconds'], $b['risk']];
-        });
-        return array_slice($evaluations, 0, 3);
+        $best = $bestEligible ?: $bestAll;
+        foreach ($best as &$evaluation) {
+            $evaluation['map_url'] = $this->mapUrl($evaluation['segments']); unset($evaluation['segments']);
+        }
+        unset($evaluation);
+        return $best;
     }
 
     public function trends(): array
     {
-        $statement = $this->pdo->query(<<<'SQL'
-            SELECT s.name, extract(isodow from m.collected_at)::int AS weekday,
-                   extract(hour from m.collected_at)::int AS hour,
-                   count(*)::int AS observations,
-                   avg(greatest(0, m.duration_in_traffic_seconds-m.duration_seconds)) AS avg_delay,
-                   percentile_cont(0.9) WITHIN GROUP (ORDER BY greatest(0, m.duration_in_traffic_seconds-m.duration_seconds)) AS p90_delay
-            FROM measurements m JOIN segments s ON s.id=m.segment_id
-            WHERE m.duration_in_traffic_seconds IS NOT NULL
-            GROUP BY s.name, weekday, hour HAVING count(*) >= 2
-            ORDER BY avg_delay DESC LIMIT 30
-        SQL);
-        return $statement->fetchAll();
+        return $this->pdo->query(<<<'SQL'
+            SELECT s.name,extract(isodow from m.collected_at)::int AS weekday,extract(hour from m.collected_at)::int AS hour,
+              count(*)::int AS observations,avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds)) AS avg_delay,
+              percentile_cont(.9) WITHIN GROUP (ORDER BY greatest(0,m.duration_in_traffic_seconds-m.duration_seconds)) AS p90_delay
+            FROM measurements m JOIN segments s ON s.id=m.segment_id WHERE m.duration_in_traffic_seconds IS NOT NULL
+            GROUP BY s.name,weekday,hour HAVING count(*)>=2 ORDER BY avg_delay DESC LIMIT 30
+        SQL)->fetchAll();
     }
 
-    private function loadSegments(): array
+    private function loadSegments(DateTimeZone $timezone,callable $progress): array
     {
         $rows = $this->pdo->query(<<<'SQL'
-            SELECT s.*, m.collected_at, m.duration_seconds, m.duration_in_traffic_seconds, m.distance_meters
-            FROM segments s LEFT JOIN measurements m ON m.segment_id=s.id
-            WHERE s.enabled ORDER BY s.name, m.collected_at
+            SELECT s.id,s.name,s.start_node,s.end_node,s.origin,s.destination,count(m.id)::int AS sample_count,
+              avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))::float AS global_mean,
+              percentile_cont(.5) WITHIN GROUP (ORDER BY m.distance_meters)::float AS distance,
+              percentile_cont(.5) WITHIN GROUP (ORDER BY m.duration_seconds)::float AS normal_duration
+            FROM segments s JOIN measurements m ON m.segment_id=s.id
+            WHERE s.enabled AND m.collected_at IS NOT NULL AND m.duration_in_traffic_seconds>0
+              AND m.duration_seconds>0 AND m.distance_meters>0
+            GROUP BY s.id ORDER BY s.name
         SQL)->fetchAll();
-        $segments = [];
+        $segments=[]; $byId=[];
         foreach ($rows as $row) {
-            $name = $row['name'];
-            $segments[$name] ??= ['name' => $name, 'start' => $row['start_node'], 'end' => $row['end_node'],
-                'origin' => $row['origin'], 'destination' => $row['destination'], 'samples' => []];
-            if ($row['collected_at'] && $row['duration_in_traffic_seconds'] && $row['distance_meters']) {
-                $segments[$name]['samples'][] = ['at' => new DateTimeImmutable($row['collected_at']),
-                    'duration' => (float) $row['duration_seconds'], 'traffic' => (float) $row['duration_in_traffic_seconds'],
-                    'distance' => (float) $row['distance_meters']];
+            $name=(string)$row['name']; $byId[(int)$row['id']]=$name;
+            $segments[$name]=['id'=>(int)$row['id'],'name'=>$name,'start'=>$row['start_node'],'end'=>$row['end_node'],
+                'origin'=>$row['origin'],'destination'=>$row['destination'],'global_mean'=>(float)$row['global_mean'],
+                'distance'=>(float)$row['distance'],'normal_duration'=>(float)$row['normal_duration'],
+                'buckets'=>[],'all_delays'=>''];
+        }
+        if ($segments===[]) return [];
+        $total=array_sum(array_map(static fn(array $row)=>(int)$row['sample_count'],$rows));$loaded=0;$started=microtime(true);
+        $statement=$this->pdo->query(<<<'SQL'
+            SELECT m.segment_id,m.collected_at,m.duration_seconds,m.duration_in_traffic_seconds
+            FROM measurements m JOIN segments s ON s.id=m.segment_id WHERE s.enabled AND m.collected_at IS NOT NULL
+              AND m.duration_in_traffic_seconds>0 AND m.duration_seconds>0 AND m.distance_meters>0 ORDER BY m.segment_id,m.collected_at
+        SQL);
+        while ($row=$statement->fetch()) {
+            $name=$byId[(int)$row['segment_id']]??null; if ($name===null) continue;
+            $at=(new DateTimeImmutable($row['collected_at']))->setTimezone($timezone);
+            $delay=max(0.0,(float)$row['duration_in_traffic_seconds']-(float)$row['duration_seconds']);
+            $key=(int)$at->format('n')*1000000+(int)$at->format('N')*10000+(int)$at->format('G')*60+(int)$at->format('i');
+            $segments[$name]['buckets'][$key]=($segments[$name]['buckets'][$key]??'').pack('d',$delay);
+            $segments[$name]['all_delays'].=pack('d',$delay);
+            $loaded++;
+            if($loaded===$total||$loaded%5000===0){$elapsed=microtime(true)-$started;$eta=$loaded?($elapsed/$loaded)*($total-$loaded):null;$progress($loaded,max(1,$total),'Loading traffic observations',$eta);}
+            $dateKey=$at->format('n-N');
+            if (!isset($this->representativeDates[$dateKey]) || $at>$this->representativeDates[$dateKey]) $this->representativeDates[$dateKey]=$at;
+        }
+        foreach ($segments as &$segment) {
+            $values=$this->unpackDoubles($segment['all_delays']);
+            $segment['delay_points']=$this->empiricalPoints($values); unset($segment['all_delays']);
+        }
+        unset($segment);
+        return $segments;
+    }
+
+    private function candidateRoutes(array $segments,string $start,string $end,int $limit,float $mph): array
+    {
+        $adjacent=[]; foreach ($segments as $segment) $adjacent[$segment['start']][]=$segment;
+        $queue=[[[],$start]]; $routes=[];
+        while ($queue && count($routes)<1000) {
+            [$path,$node]=array_shift($queue);
+            if ($node===$end && $path) { $routes[]=$path; continue; }
+            $visited=array_merge([$start],array_column($path,'end'));
+            foreach ($adjacent[$node]??[] as $segment) if (!in_array($segment['end'],$visited,true)) $queue[]=[[...$path,$segment],$segment['end']];
+        }
+        $score=static function(array $route)use($mph):float{
+            $total=0.0; foreach($route as $s)$total+=$s['distance']/($mph*self::METERS_PER_MILE/3600)+$s['global_mean']; return $total;
+        };
+        usort($routes,static fn(array $a,array $b):int=>$score($a)<=>$score($b));
+        return array_slice($routes,0,$limit);
+    }
+
+    private function departurePatterns(DateTimeZone $timezone): array
+    {
+        $dates=$this->representativeDates; ksort($dates); $result=[];
+        foreach($dates as $date)for($slot=0;$slot<48;$slot++)$result[]=$date->setTimezone($timezone)->setTime(0,0)->modify('+'.($slot*30).' minutes');
+        usort($result,static fn(DateTimeImmutable $a,DateTimeImmutable $b):int=>$a<=>$b);
+        return $result?:[new DateTimeImmutable('now',$timezone)];
+    }
+
+    private function prediction(array $segment,DateTimeImmutable $arrival,DateTimeZone $timezone): array
+    {
+        $local=$arrival->setTimezone($timezone); $bucketMinute=intdiv((int)$local->format('i'),30)*30;
+        $cacheKey=$segment['name'].'|'.$local->format('N-n-G-').$bucketMinute;
+        if(isset($this->predictionCache[$cacheKey]))return $this->unpackPrediction($this->predictionCache[$cacheKey]);
+        $arrivalMinute=(int)$local->format('G')*60+$bucketMinute; $arrivalMonth=(int)$local->format('n'); $weekday=(int)$local->format('N');
+        $values=[];$weights=[];
+        for($month=1;$month<=12;$month++)for($delta=-90;$delta<=90;$delta++){
+            $minute=($arrivalMinute+$delta+1440)%1440; $key=$month*1000000+$weekday*10000+$minute;
+            if(!isset($segment['buckets'][$key]))continue;
+            $monthGap=abs($month-$arrivalMonth);$monthGap=min($monthGap,12-$monthGap);
+            $weight=exp(-abs($delta)/45)*($monthGap<=1?1.0:.35);
+            foreach($this->unpackDoubles($segment['buckets'][$key]) as $delay){$values[]=$delay;$weights[]=$weight;}
+        }
+        $nearby=count($values);$share=$nearby/($nearby+10.0);
+        $localMean=$nearby?$this->weightedMean($values,$weights):$segment['global_mean'];
+        $result=['mean'=>$share*$localMean+(1-$share)*$segment['global_mean'],
+            'distance'=>$segment['distance'],'normal'=>$segment['normal_duration'],'nearby'=>$nearby,'share'=>$share,
+            'local_points'=>$nearby?$this->empiricalPoints($values,$weights):[]];
+        $this->predictionCache[$cacheKey]=$this->packPrediction($result);return$result;
+    }
+
+    private function evaluate(array $route,DateTimeImmutable $departure,DateTimeZone $timezone,float $mph): array
+    {
+        $arrival=$departure;$drive=$congestion=$distance=0.0;$support=0;$predictions=[];
+        foreach($route as $segment){
+            $prediction=$this->prediction($segment,$arrival,$timezone);$seconds=$prediction['distance']/($mph*self::METERS_PER_MILE/3600);
+            $drive+=$seconds;$congestion+=$prediction['mean'];$distance+=$prediction['distance'];$support+=$prediction['nearby'];
+            $predictions[]=[$segment,$prediction,$seconds];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
+        }
+        $seedMaterial=implode('|',array_column($route,'name')).'|'.$departure->format('Y-m-d\TH:i:sP');
+        $seed=unpack('q',sodium_crypto_generichash($seedMaterial,'',8))[1];
+        $random=new Randomizer(new PcgOneseq128XslRr64($seed));
+        $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);
+        foreach($predictions as [$segment,$prediction,$seconds]){
+            $draws=[];$global=$segment['delay_points'];$globalMax=count($global)-1;
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++)$draws[$i]=$global[$random->getInt(0,$globalMax)];
+            $useLocal=[];$localCount=0;
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++){
+                $useLocal[$i]=($random->getInt(0,1000000000)/1000000000)<$prediction['share']; if($useLocal[$i])$localCount++;
             }
-        }
-        return array_filter($segments, static fn(array $segment): bool => $segment['samples'] !== []);
-    }
-
-    private function candidateRoutes(array $segments, string $start, string $end, int $limit, float $mph): array
-    {
-        $adjacent = [];
-        foreach ($segments as $segment) $adjacent[$segment['start']][] = $segment;
-        $queue = [[[], $start]]; $routes = [];
-        while ($queue && count($routes) < 1000) {
-            [$path, $node] = array_shift($queue);
-            if ($node === $end && $path) { $routes[] = $path; continue; }
-            $visited = array_merge([$start], array_column($path, 'end'));
-            foreach ($adjacent[$node] ?? [] as $segment) {
-                if (!in_array($segment['end'], $visited, true)) $queue[] = [[...$path, $segment], $segment['end']];
+            if($localCount&&$prediction['local_points']){
+                $localMax=count($prediction['local_points'])-1;
+                for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($useLocal[$i])$draws[$i]=$prediction['local_points'][$random->getInt(0,$localMax)];
             }
+            $threshold=max(120.0,$prediction['normal']*.05);
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++){$totals[$i]+=$draws[$i];if($draws[$i]>=$threshold)$slow[$i]=true;}
         }
-        usort($routes, function (array $a, array $b) use ($mph): int {
-            $score = function (array $route) use ($mph): float {
-                $total = 0.0;
-                foreach ($route as $segment) {
-                    $distance = $this->median(array_column($segment['samples'], 'distance'));
-                    $delay = array_sum(array_map(static fn(array $s): float => max(0, $s['traffic']-$s['duration']), $segment['samples'])) / count($segment['samples']);
-                    $total += $distance / ($mph * self::METERS_PER_MILE / 3600) + $delay;
-                }
-                return $total;
-            };
-            return $score($a) <=> $score($b);
-        });
-        return array_slice($routes, 0, max(1, $limit));
+        $material=max(300.0,$drive*.02);$events=0;
+        for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($slow[$i]||$totals[$i]>=$material)$events++;
+        $nodes=array_merge([$route[0]['start']],array_column($route,'end'));
+        return ['route'=>implode(' -> ',$nodes),'departure'=>$departure,'drive_seconds'=>$drive,'congestion_seconds'=>$congestion,
+            'expected_seconds'=>$drive+$congestion,'risk'=>$events/self::RISK_SIMULATIONS,'distance_miles'=>$distance/self::METERS_PER_MILE,
+            'observations'=>$support,'segments'=>$route];
     }
 
-    private function departurePatterns(array $segments, DateTimeZone $timezone): array
+    private function empiricalPoints(array $values,?array $weights=null): array
     {
-        $dates = [];
-        foreach ($segments as $segment) foreach ($segment['samples'] as $sample) {
-            $local = $sample['at']->setTimezone($timezone); $key = $local->format('n-N');
-            if (!isset($dates[$key]) || $local > $dates[$key]) $dates[$key] = $local;
-        }
-        $result = [];
-        foreach ($dates as $date) for ($slot = 0; $slot < 48; $slot++) {
-            $result[] = $date->setTime(0, 0)->modify('+' . ($slot * 30) . ' minutes');
-        }
-        return $result ?: [new DateTimeImmutable('now', $timezone)];
+        $count=count($values);if($weights===null&&$count<=self::EMPIRICAL_POINTS)return array_map($this->float32(...),$values);
+        $pairs=[];foreach($values as $i=>$value)$pairs[]=[$value,$weights[$i]??1.0];
+        usort($pairs,static fn($a,$b)=>$a[0]<=>$b[0]);$cumulative=[];$running=0.0;
+        if($weights===null){foreach($pairs as $i=>$pair)$cumulative[]=($i+.5)/$count;}
+        else{$total=array_sum($weights);foreach($pairs as $pair){$running+=$pair[1];$cumulative[]=$running/$total;}}
+        $result=[];for($i=0;$i<self::EMPIRICAL_POINTS;$i++)$result[]=$this->float32($this->interpolate(($i+.5)/self::EMPIRICAL_POINTS,$cumulative,$pairs));
+        return $result;
     }
 
-    private function evaluate(array $route, DateTimeImmutable $departure, DateTimeZone $timezone, float $mph): array
+    private function interpolate(float $target,array $x,array $pairs): float
     {
-        $arrival = $departure; $drive = $delay = $distance = $support = 0.0; $risks = [];
-        foreach ($route as $segment) {
-            $prediction = $this->predict($segment['samples'], $arrival, $timezone);
-            $seconds = $prediction['distance'] / ($mph * self::METERS_PER_MILE / 3600);
-            $drive += $seconds; $delay += $prediction['delay']; $distance += $prediction['distance'];
-            $support += $prediction['support']; $risks[] = $prediction['risk'];
-            $arrival = $arrival->modify('+' . (int) round($seconds + $prediction['delay']) . ' seconds');
-        }
-        $nodes = array_merge([$route[0]['start']], array_column($route, 'end'));
-        return ['route' => implode(' -> ', $nodes), 'departure' => $departure, 'drive_seconds' => $drive,
-            'congestion_seconds' => $delay, 'expected_seconds' => $drive + $delay,
-            'risk' => 1 - array_product(array_map(static fn(float $risk): float => 1 - $risk, $risks)),
-            'distance_miles' => $distance / self::METERS_PER_MILE, 'observations' => (int) $support,
-            'map_url' => $this->mapUrl($route)];
+        $count=count($x);if($target<=$x[0])return(float)$pairs[0][0];if($target>=$x[$count-1])return(float)$pairs[$count-1][0];
+        $high=1;while($x[$high]<$target)$high++;$low=$high-1;$share=($target-$x[$low])/($x[$high]-$x[$low]);
+        return(float)($pairs[$low][0]+$share*($pairs[$high][0]-$pairs[$low][0]));
     }
 
-    private function predict(array $samples, DateTimeImmutable $arrival, DateTimeZone $timezone): array
-    {
-        $delays = array_map(static fn(array $s): float => max(0, $s['traffic'] - $s['duration']), $samples);
-        $global = array_sum($delays) / count($delays); $local = [];
-        foreach ($samples as $index => $sample) {
-            $observed = $sample['at']->setTimezone($timezone);
-            $gap = abs(((int)$observed->format('G') * 60 + (int)$observed->format('i')) - ((int)$arrival->format('G') * 60 + (int)$arrival->format('i')));
-            $gap = min($gap, 1440 - $gap);
-            if ($observed->format('N') === $arrival->format('N') && $gap <= 90) $local[] = $delays[$index];
-        }
-        $share = count($local) / (count($local) + 10); $localMean = $local ? array_sum($local) / count($local) : $global;
-        $threshold = max(120.0, $this->median(array_column($samples, 'duration')) * .05);
-        $population = $local ?: $delays; $slow = count(array_filter($population, static fn(float $v): bool => $v >= $threshold));
-        return ['delay' => $share * $localMean + (1-$share) * $global, 'distance' => $this->median(array_column($samples, 'distance')),
-            'support' => count($local), 'risk' => $slow / count($population)];
-    }
-
-    private function median(array $values): float
-    {
-        sort($values, SORT_NUMERIC); $count = count($values); $middle = intdiv($count, 2);
-        return $count % 2 ? (float)$values[$middle] : ((float)$values[$middle-1] + (float)$values[$middle]) / 2;
-    }
+    private function unpackDoubles(string $packed): array { return $packed===''?[]:array_values(unpack('d*',$packed)); }
+    private function float32(float $value): float { return unpack('gvalue',pack('g',$value))['value']; }
+    private function packPrediction(array $value): string { return pack('ddddd',$value['mean'],$value['distance'],$value['normal'],(float)$value['nearby'],$value['share']).($value['local_points']?pack('d*',...$value['local_points']):''); }
+    private function unpackPrediction(string $packed): array { $head=unpack('dmean/ddistance/dnormal/dnearby/dshare',$packed);return['mean'=>$head['mean'],'distance'=>$head['distance'],'normal'=>$head['normal'],'nearby'=>(int)$head['nearby'],'share'=>$head['share'],'local_points'=>$this->unpackDoubles(substr($packed,40))]; }
+    private function weightedMean(array $values,array $weights): float { $sum=$weight=0.0;foreach($values as $i=>$v){$sum+=$v*$weights[$i];$weight+=$weights[$i];}return$sum/$weight; }
+    private function retainBest(array &$best,array $item,callable $compare): void { $best[]=$item;usort($best,$compare);if(count($best)>3)array_pop($best); }
 
     private function mapUrl(array $route): string
     {
-        $origin = $route[0]['origin']; $destination = $route[array_key_last($route)]['destination'];
-        $waypoints = array_map(static fn(array $s): string => $s['destination'], array_slice($route, 0, -1));
-        return 'https://www.google.com/maps/embed/v1/directions?' . http_build_query(['key' => $this->settings->get('google_maps_api_key',''),
-            'origin' => $origin, 'destination' => $destination, 'waypoints' => implode('|', $waypoints), 'mode' => 'driving']);
+        $origin=$route[0]['origin'];$destination=$route[array_key_last($route)]['destination'];
+        $waypoints=array_map(static fn($s)=>$s['destination'],array_slice($route,0,-1));
+        return 'https://www.google.com/maps/embed/v1/directions?'.http_build_query(['key'=>$this->settings->get('google_maps_api_key',''),
+            'origin'=>$origin,'destination'=>$destination,'waypoints'=>implode('|',$waypoints),'mode'=>'driving']);
     }
 }

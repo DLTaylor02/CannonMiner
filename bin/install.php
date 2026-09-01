@@ -51,7 +51,7 @@ if ($count === 0) {
     do {
         $password = readHidden('Admin password (12+ characters): ');
     } while (strlen($password) < 12 && fwrite(STDERR, "Password must be at least 12 characters.\n"));
-    $statement = $pdo->prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
+    $statement = $pdo->prepare("INSERT INTO users (username,password_hash,role) VALUES (?,?,'superadmin')");
     $statement->execute([$username, password_hash($password, PASSWORD_DEFAULT)]);
     echo "Administrator created.\n";
 }

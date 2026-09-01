@@ -80,6 +80,7 @@ command -v composer >/dev/null 2>&1 || fail "Composer installation failed."
 command -v psql >/dev/null 2>&1 || fail "PostgreSQL client installation failed."
 php -r 'exit(version_compare(PHP_VERSION, "8.2.0", ">=") ? 0 : 1);' || fail "PHP 8.2+ is required; found $(php -r 'echo PHP_VERSION;')."
 php -r 'exit(extension_loaded("pdo_pgsql") ? 0 : 1);' || fail "PHP extension pdo_pgsql is not enabled."
+php -r 'exit(extension_loaded("sodium") ? 0 : 1);' || fail "PHP extension sodium is not enabled."
 COMPOSER_VERSION="$(composer --version --no-ansi | awk '{print $3}')"
 php -r 'exit(version_compare($argv[1], "2.0.0", ">=") ? 0 : 1);' "$COMPOSER_VERSION" || fail "Composer 2+ is required; found $COMPOSER_VERSION."
 
@@ -89,6 +90,12 @@ POSTGRES_VERSION="$(as_user postgres psql -tAc 'SHOW server_version_num' | tr -d
 PHP_FPM_SERVICE="$(systemctl list-unit-files 'php*-fpm.service' --no-legend 2>/dev/null | awk 'NR==1 {print $1}')"
 [ -n "$PHP_FPM_SERVICE" ] || fail "No PHP-FPM systemd service was found."
 $SUDO systemctl enable --now "$PHP_FPM_SERVICE"
+PHP_SHORT_VERSION="$(php -r 'echo PHP_MAJOR_VERSION,".",PHP_MINOR_VERSION;')"
+PHP_LIMITS_TMP="$(mktemp)"
+printf '%s\n' 'memory_limit=512M' 'max_execution_time=0' > "$PHP_LIMITS_TMP"
+$SUDO install -m 0644 "$PHP_LIMITS_TMP" "/etc/php/$PHP_SHORT_VERSION/fpm/conf.d/99-cannonminer.ini"
+$SUDO install -m 0644 "$PHP_LIMITS_TMP" "/etc/php/$PHP_SHORT_VERSION/cli/conf.d/99-cannonminer.ini"
+rm -f "$PHP_LIMITS_TMP"
 
 cd "$ROOT_DIR"
 if [ ! -f .env ]; then
@@ -130,6 +137,7 @@ else
   as_user "$INSTALL_USER" composer install --no-dev --optimize-autoloader --no-interaction
 fi
 php bin/install.php
+$SUDO systemctl reload "$PHP_FPM_SERVICE"
 
 PHP_FPM_SOCKET="$(find /run/php -maxdepth 1 -type s -name 'php*-fpm.sock' -print -quit)"
 [ -n "$PHP_FPM_SOCKET" ] || fail "PHP-FPM socket was not found under /run/php."
@@ -152,6 +160,7 @@ server {
     location ~ \.php\$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:$PHP_FPM_SOCKET;
+        fastcgi_read_timeout 3600s;
     }
     location ~ /\. { deny all; }
 }
