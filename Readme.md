@@ -5,6 +5,10 @@ departure windows against historical traffic-delay observations. It includes
 authentication, route maps, database-backed configuration, scheduled
 collection, and reports for traffic windows to avoid.
 
+## Example screenshot
+
+![Route Analysis Screenshot](Docs/ExampleScreenshot.JPG)
+
 ## Supported installation
 
 Only Debian based linux distributions are currently supported.
