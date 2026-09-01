@@ -1,0 +1,19 @@
+{% extends 'layout.twig' %}{% block title %}Settings | CannonMiner{% endblock %}{% block content %}
+<section class="page-head"><div><p class="kicker">System</p><h1>Settings</h1></div></section>
+{% if message %}<p class="success">{{ message }}</p>{% endif %}
+<form method="post" class="settings"><input type="hidden" name="_token" value="{{ csrf }}">
+{% if role=='superadmin' %}
+<label>Google Maps API key {% if google_key_configured %}<span>Saved</span>{% endif %}<input type="password" name="google_maps_api_key" value="{{ google_key_configured?'************':'' }}" placeholder="Directions and Maps Static APIs" autocomplete="new-password"></label>
+<label>Traffic timezone<input name="timezone" value="{{ settings.timezone }}"></label>
+<label>Collection interval <span>minutes</span><input type="number" min="5" max="10080" name="collection_interval_minutes" value="{{ settings.collection_interval_minutes }}"></label>
+<label>Default target speed<input type="number" name="default_speed_mph" value="{{ settings.default_speed_mph }}"></label>
+<label>Candidate route limit<input type="number" min="1" max="100" name="candidate_routes" value="{{ settings.candidate_routes }}"></label>
+<label>Departure search interval <span>minutes</span><input type="number" min="5" max="60" name="departure_interval_minutes" value="{{ settings.departure_interval_minutes }}"></label>
+<label class="check"><input type="checkbox" name="google_data_storage_authorized" value="yes" {{ settings.google_data_storage_authorized=='yes'?'checked':'' }}><span>I confirm our Google agreement permits persistent storage and analysis of this traffic data.</span></label>
+{% endif %}
+<label>Default maximum risk<input type="number" min="0" max="1" step=".01" name="default_max_delay_risk" value="{{ settings.default_max_delay_risk }}"></label><button>Save settings</button></form>
+{% if last_run %}<p>Last collection: <strong>{{ last_run.status }}</strong> at {{ last_run.started_at|date('Y-m-d H:i T') }}{% if last_run.segments_collected %}, {{ last_run.segments_collected }} segments{% endif %}.</p>{% endif %}
+<h2 class="section-title">Add or update segment</h2>
+<form method="post" action="/segments" class="settings"><input type="hidden" name="_token" value="{{ csrf }}"><label>Name <span>start_to_end</span><input name="name" pattern="[a-z0-9]+_to_[a-z0-9]+" required></label><label>Origin<input name="origin" required></label><label>Destination<input name="destination" required></label><label>Origin timezone <span>IANA name</span><input name="timezone" value="America/New_York" required></label><button>Save segment</button></form>
+<h2 class="section-title">Route segments</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Origin</th><th>Destination</th><th>Origin timezone</th><th>Status</th><th></th></tr></thead><tbody>{% for row in segments %}<tr><td><strong>{{ row.name }}</strong></td><td>{{ row.origin }}</td><td>{{ row.destination }}</td><td>{{ row.timezone }}</td><td>{{ row.enabled?'Enabled':'Disabled' }}</td><td><form method="post" action="/segments/{{ row.id }}/toggle"><input type="hidden" name="_token" value="{{ csrf }}"><button class="small">{{ row.enabled?'Disable':'Enable' }}</button></form></td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

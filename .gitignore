@@ -5,3 +5,8 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local environment and Composer output
+.env
+/vendor/
+/var/
