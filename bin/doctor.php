@@ -32,7 +32,7 @@ try {
     exit(1);
 }
 
-$tables = ['settings','users','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs'];
+$tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs'];
 foreach ($tables as $table) {
     $statement = $pdo->prepare("SELECT to_regclass(?) IS NOT NULL");
     $statement->execute(['public.' . $table]);
@@ -46,6 +46,10 @@ $check(($values['collection_interval_minutes'] ?? null) === '60' || (int)($value
 $check(($values['timezone'] ?? '') !== '', 'Traffic timezone is configured');
 $check(($values['google_maps_api_key'] ?? '') !== '', 'Google Maps API key is configured');
 $check(($values['google_data_storage_authorized'] ?? 'no') === 'yes', 'Google data-storage authorization is confirmed');
+$check((int)($values['login_rate_limit'] ?? 0) >= 1, 'Login rate limit is configured');
+$check((int)($values['login_lockout_minutes'] ?? 0) >= 1, 'Login lockout duration is configured');
+$check((int)($values['password_min_length'] ?? 0) >= 8, 'Minimum password length is configured');
+$check(in_array($values['password_min_strength'] ?? '', ['strong','very_strong'], true), 'Minimum password strength is configured');
 
 $users = (int)$pdo->query('SELECT count(*) FROM users')->fetchColumn();
 $superadmins = (int)$pdo->query("SELECT count(*) FROM users WHERE role='superadmin'")->fetchColumn();

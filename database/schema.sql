@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'adaptive';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE role='superadmin') AND EXISTS (SELECT 1 FROM users) THEN
     UPDATE users SET role='superadmin' WHERE id=(SELECT min(id) FROM users);
@@ -23,6 +24,15 @@ DO $$ BEGIN
     AND id<>(SELECT min(id) FROM users WHERE role='superadmin');
 END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_superadmin_idx ON users ((role)) WHERE role='superadmin';
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    username_hash CHAR(64) NOT NULL,
+    ip_hash CHAR(64) NOT NULL,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_attempts_username_time_idx ON login_attempts(username_hash, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS login_attempts_ip_time_idx ON login_attempts(ip_hash, attempted_at DESC);
 
 CREATE TABLE IF NOT EXISTS analysis_jobs (
     id UUID PRIMARY KEY,

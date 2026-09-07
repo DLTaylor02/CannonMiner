@@ -9,6 +9,10 @@
 <label>Default target speed<input type="number" name="default_speed_mph" value="{{ settings.default_speed_mph }}"></label>
 <label>Candidate route limit<input type="number" min="1" max="100" name="candidate_routes" value="{{ settings.candidate_routes }}"></label>
 <label>Departure search interval <span>minutes</span><input type="number" min="5" max="60" name="departure_interval_minutes" value="{{ settings.departure_interval_minutes }}"></label>
+<label>Failed sign-ins before lockout<input type="number" min="1" max="100" name="login_rate_limit" value="{{ settings.login_rate_limit }}"></label>
+<label>Temporary lockout <span>minutes</span><input type="number" min="1" max="1440" name="login_lockout_minutes" value="{{ settings.login_lockout_minutes }}"></label>
+<label>Minimum password length<input type="number" min="8" max="64" name="password_min_length" value="{{ settings.password_min_length }}"></label>
+<label>Minimum password strength<select name="password_min_strength"><option value="strong" {{ settings.password_min_strength=='strong'?'selected':'' }}>Strong</option><option value="very_strong" {{ settings.password_min_strength=='very_strong'?'selected':'' }}>Very strong</option></select></label>
 <label class="check"><input type="checkbox" name="google_data_storage_authorized" value="yes" {{ settings.google_data_storage_authorized=='yes'?'checked':'' }}><span>I confirm our Google agreement permits persistent storage and analysis of this traffic data.</span></label>
 {% endif %}
 <label>Default maximum risk<input type="number" min="0" max="1" step=".01" name="default_max_delay_risk" value="{{ settings.default_max_delay_risk }}"></label><button>Save settings</button></form>

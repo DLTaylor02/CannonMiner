@@ -80,6 +80,13 @@ composer reset-superadmin-password
 ```
 - **Web admin**s can manage segments, users, and the default maximum risk. They cannot read or change the Google key, collection interval, or other collection settings.
 - **User**s can run route analysis and view avoid trends. Route jobs always enforce the configured maximum risk for this role.
+- New and changed passwords for web admins and users must meet the password policy configured by the superadmin. Existing passwords continue to work until an administrator selects **Require change** for that account.
+- Sign-in failures are limited by both username and client address. The superadmin configures the attempt limit and temporary lockout duration under Settings.
+- Passwords are checked against the Have I Been Pwned Pwned Passwords range service. Only the first five characters of a locally calculated SHA-1 hash are sent. If the service is unavailable, a locally valid password is accepted and the user receives an advisory.
+
+### Reverse proxies
+
+CannonMiner uses the direct client address supplied by Nginx by default. If another trusted reverse proxy sits in front of CannonMiner's Nginx site, add that proxy's IP address to `TRUSTED_PROXIES` in `.env`. Multiple exact IPv4 or IPv6 addresses are comma-separated. Forwarded client-address headers are ignored unless the immediate peer appears in this list.
 
 ## Route selection
 

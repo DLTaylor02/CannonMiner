@@ -1,7 +1,9 @@
 INSERT INTO settings (key, value) VALUES
 ('google_maps_api_key', ''), ('timezone', 'America/New_York'), ('default_speed_mph', '110'),
 ('default_max_delay_risk', '0.20'), ('candidate_routes', '25'), ('departure_interval_minutes', '15'),
-('collection_interval_minutes', '60'), ('google_data_storage_authorized', 'no')
+('collection_interval_minutes', '60'), ('google_data_storage_authorized', 'no'),
+('login_rate_limit', '5'), ('login_lockout_minutes', '15'),
+('password_min_strength', 'strong'), ('password_min_length', '12')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO segments (name,start_node,end_node,origin,destination,timezone) VALUES

@@ -231,6 +231,7 @@ SQL
     echo "DATABASE_URL=pgsql:host=127.0.0.1;port=5432;dbname=$APP_DB_NAME"
     echo "DATABASE_USER=$APP_DB_USER"
     echo "DATABASE_PASSWORD=$APP_DB_PASSWORD"
+    echo "TRUSTED_PROXIES="
     echo "APP_ENV=production"
   } > .env
 else
@@ -246,8 +247,9 @@ else
   as_user "$INSTALL_USER" composer install --no-dev --optimize-autoloader --no-interaction
 fi
 PHP_CLI=(php -d memory_limit="$PHP_MEMORY_LIMIT" -d max_execution_time=0 -d max_input_time=0)
-"${PHP_CLI[@]}" -l public/index.php >/dev/null
-"${PHP_CLI[@]}" -l bin/analyze-worker.php >/dev/null
+while IFS= read -r -d '' PHP_FILE; do
+  "${PHP_CLI[@]}" -l "$PHP_FILE" >/dev/null
+done < <(find public src bin -type f -name '*.php' -print0)
 "${PHP_CLI[@]}" bin/install.php
 $SUDO chown -R "$INSTALL_USER":"$APP_SYSTEM_USER" "$ROOT_DIR"
 $SUDO find "$ROOT_DIR" -type d -exec chmod 0750 {} +

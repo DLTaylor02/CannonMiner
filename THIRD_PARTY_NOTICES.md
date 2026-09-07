@@ -35,3 +35,14 @@ Slim Twig View, Twig, Guzzle, and their transitive dependencies. Their license
 files remain in `vendor/`. The installer also writes the resolved dependency
 license inventory to `var/composer-licenses.json`; use that generated inventory
 as the authoritative list for the installed versions.
+
+## Have I Been Pwned
+
+CannonMiner checks proposed non-superadmin passwords using the free Pwned
+Passwords range API. The password is SHA-1 hashed locally and only the first
+five hash characters are transmitted; returned suffix data is compared in
+memory and immediately discarded. Service availability and use are governed by
+Have I Been Pwned's terms and API documentation:
+
+- https://haveibeenpwned.com/API/v3#PwnedPasswords
+- https://haveibeenpwned.com/TermsOfUse
