@@ -36,11 +36,19 @@ The script installs and validates dependencies as well as installing the app its
 - Nginx
 - cron
 
+Setup creates a non-login `cannonminer` system account, a dedicated PHP-FPM
+pool and Unix socket, private PHP session storage, and a systemd analysis
+worker. Nginx can access the socket and public assets but does not receive
+access to CannonMiner's `.env`, sessions, application source, or writable data.
+Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
+long analysis does not occupy a web request worker.
+
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx
 site and does not replace, disable, or modify existing sites. Choose another
 unused port if `3636` is already occupied. The port may also need to be allowed
-through the server firewall.
+through the server firewall. The port can also be supplied as the first argument
+for an unattended run, such as `./setup.sh 3637`.
 
 See `Docs\How to setup API key.md` for instructions on how to setup your API key.
 During first-time database setup, the installer prompts for the Google Maps API
@@ -92,5 +100,7 @@ The three highest-ranked combinations are displayed. If no option satisfies the 
 - `src/Router.php`: route scoring
 - `src/Collector.php`: Google Directions collection
 - `database/`: schema, seeds, and legacy migration
+- `config/nginx.conf.example`: isolated Nginx site template used by setup
 - `templates/`: Twig UI
 - `bin/collect.php`: manual and scheduled collector
+- `bin/analyze-worker.php`: systemd-managed background analysis worker

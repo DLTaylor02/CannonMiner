@@ -16,8 +16,8 @@
   },
   "scripts": {
     "serve": "php -S 0.0.0.0:8080 -t public",
-    "collect": "php bin/collect.php",
-    "reset-superadmin-password": "php bin/reset-superadmin-password.php",
-    "test": "php bin/doctor.php"
+    "collect": "@php -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 bin/collect.php",
+    "reset-superadmin-password": "@php -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 bin/reset-superadmin-password.php",
+    "test": "@php -d memory_limit=512M -d max_execution_time=0 -d max_input_time=0 bin/doctor.php"
   }
 }

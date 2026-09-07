@@ -23,10 +23,26 @@ Noninteractive installations use `3636`, or the existing port on upgrades;
 not claim Nginx's `default_server`, remove the default-site symlink, or edit any
 other application's server block.
 
+The application runs under a non-login `cannonminer` system user. Setup creates
+a dedicated PHP-FPM pool at `/etc/php/<version>/fpm/pool.d/cannonminer.conf`, a
+socket at `/run/php/cannonminer.sock`, private sessions under
+`/var/lib/cannonminer/sessions`, and a `cannonminer-worker.service` analysis
+worker. Nginx retains its normal account and can read only the public document
+tree and FPM socket. The `.env`, application source, session files, and runtime
+data are not readable by other applications running as `www-data`.
+Upgrades restart the analysis worker: queued jobs are retained, while a job that
+was actively running during the restart is marked failed and can be run again.
+
+The 512 MB memory limit and unlimited execution/input timers are scoped to the
+CannonMiner FPM pool. Collector, diagnostic, password-reset, installer, and
+analysis-worker CLI commands receive their limits explicitly instead of
+changing global PHP CLI configuration. Setup removes global `99-cannonminer.ini`
+files created by older CannonMiner releases.
+
 Before installing `/etc/cron.d/cannonminer`, setup removes active or commented
-legacy Python collector entries that invoke `run_main.sh` or CannonMiner's
-`main.py` from the original operator's personal crontab. Other entries in that
-crontab are preserved.
+legacy Python collector entries only when the same line contains both a
+CannonMiner path and `run_main.sh`. Other entries in the original operator's
+personal crontab are preserved.
 
 When setup is run by a non-root operator it validates sudo once and immediately
 re-executes the complete installer as root. The original operator remains the

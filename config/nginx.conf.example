@@ -1,0 +1,22 @@
+server {
+    listen {{PORT}};
+    listen [::]:{{PORT}};
+    server_name _;
+    root "{{PROJECT_ROOT}}/public";
+    index index.php;
+    client_max_body_size 2m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:{{FPM_SOCKET}};
+        fastcgi_read_timeout 3600s;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}

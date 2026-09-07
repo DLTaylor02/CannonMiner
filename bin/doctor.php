@@ -19,6 +19,10 @@ $check(version_compare(PHP_VERSION, '8.2.0', '>='), 'PHP 8.2+ (' . PHP_VERSION .
 foreach (['pdo', 'pdo_pgsql', 'json', 'mbstring'] as $extension) {
     $check(extension_loaded($extension), "PHP extension {$extension}");
 }
+if (PHP_OS_FAMILY === 'Linux') {
+    $check(is_dir('/var/lib/cannonminer/sessions'), 'Dedicated session directory exists');
+    $check(file_exists('/run/php/cannonminer.sock'), 'Dedicated PHP-FPM socket exists');
+}
 
 try {
     $pdo = Database::connect($root);
