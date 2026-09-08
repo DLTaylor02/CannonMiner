@@ -156,6 +156,7 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
     $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result FROM analysis_jobs WHERE id=?');
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
+    $job['updated_at']=(new DateTimeImmutable((string)$job['updated_at']))->format(DATE_ATOM);
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
@@ -169,10 +170,16 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
     if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
     $where=$conditions?' WHERE '.implode(' AND ',$conditions):'';
+    $pageSize=50;
+    $countStatement=$pdo->prepare("SELECT count(*) FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}");
+    $countStatement->execute($parameters);$totalRuns=(int)$countStatement->fetchColumn();
+    $totalPages=max(1,(int)ceil($totalRuns/$pageSize));$page=max(1,min($totalPages,(int)($query['page']??1)));$offset=($page-1)*$pageSize;
     $sqlDirection=strtoupper($direction);
-    $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC",'run'=>"created_at {$sqlDirection}",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC"};
+    $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC,id DESC",'run'=>"created_at {$sqlDirection},id {$sqlDirection}",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC,id DESC"};
     $statement=$pdo->prepare(<<<SQL
-        SELECT * FROM (
+        SELECT history.*,(count(*) FILTER (WHERE status='complete') OVER (
+          ORDER BY {$order} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ))::int AS rank FROM (
           SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,
             j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
@@ -188,8 +195,9 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
           FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}
         ) history
         ORDER BY {$order}
+        LIMIT {$pageSize} OFFSET {$offset}
     SQL);$statement->execute($parameters);$runs=$statement->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'direction'=>$direction,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'direction'=>$direction,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);

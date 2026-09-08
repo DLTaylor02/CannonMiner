@@ -62,7 +62,7 @@ final class Router
         $departureInterval=max(5,min(60,(int)$this->settings->get('departure_interval_minutes','15')));
         $departures = $this->departurePatterns($timezone,$departureInterval);
         $routeWork=array_sum(array_map('count',$routes));
-        $total = $routeWork*count($departures); $done = 0; $lastReported=0; $started = microtime(true);
+        $total = $routeWork*count($departures); $done = 0; $lastReported=0; $started = microtime(true); $lastReportedAt=$started;
         $bestEligible = []; $bestAll = [];
         $compare = static fn(array $a,array $b): int => $profile === 'reliability'
             ? [$a['risk'],$a['expected_seconds']] <=> [$b['risk'],$b['expected_seconds']]
@@ -72,9 +72,9 @@ final class Router
             $this->retainBest($bestAll,$evaluation,$compare);
             if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
             $done+=count($route);
-            if ($done === $total || $done-$lastReported >= 25) {
+            if ($done === $total || $done-$lastReported >= 25 || microtime(true)-$lastReportedAt >= 10) {
                 $elapsed = microtime(true)-$started; $eta = $done ? ($elapsed/$done)*($total-$done) : null;
-                $progress($done,$total,'Scoring route segments and departure patterns',$eta);$lastReported=$done;
+                $progress($done,$total,'Scoring route segments and departure patterns',$eta);$lastReported=$done;$lastReportedAt=microtime(true);
             }
         }
         $best = $bestEligible ?: $bestAll;
@@ -140,7 +140,7 @@ final class Router
                 'polyline'=>$row['polyline']?:null,'buckets'=>[],'all_delays'=>''];
         }
         if ($segments===[]) return [];
-        $total=array_sum(array_map(static fn(array $row)=>(int)$row['sample_count'],$rows));$loaded=0;$started=microtime(true);
+        $total=array_sum(array_map(static fn(array $row)=>(int)$row['sample_count'],$rows));$loaded=0;$started=microtime(true);$lastReportedAt=$started;
         $statement=$this->pdo->query(<<<'SQL'
             SELECT m.segment_id,m.collected_at,m.duration_seconds,m.duration_in_traffic_seconds
             FROM measurements m JOIN segments s ON s.id=m.segment_id WHERE s.enabled AND m.collected_at IS NOT NULL
@@ -154,7 +154,7 @@ final class Router
             $segments[$name]['buckets'][$key]=($segments[$name]['buckets'][$key]??'').pack('d',$delay);
             $segments[$name]['all_delays'].=pack('d',$delay);
             $loaded++;
-            if($loaded===$total||$loaded%5000===0){$elapsed=microtime(true)-$started;$eta=$loaded?($elapsed/$loaded)*($total-$loaded):null;$progress($loaded,max(1,$total),'Loading traffic observations',$eta);}
+            if($loaded===$total||$loaded%5000===0||microtime(true)-$lastReportedAt>=10){$elapsed=microtime(true)-$started;$eta=$loaded?($elapsed/$loaded)*($total-$loaded):null;$progress($loaded,max(1,$total),'Loading traffic observations',$eta);$lastReportedAt=microtime(true);}
             $dateKey=$at->format('n-N');
             if (!isset($this->representativeDates[$dateKey]) || $at>$this->representativeDates[$dateKey]) $this->representativeDates[$dateKey]=$at;
         }
