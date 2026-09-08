@@ -36,23 +36,6 @@ The script installs and validates dependencies as well as installing the app its
 - Nginx
 - cron
 
-Setup creates a non-login `cannonminer` system account, a dedicated PHP-FPM
-pool and Unix socket, private PHP session storage, and a systemd analysis
-worker. Nginx can access the socket and public assets but does not receive
-access to CannonMiner's `.env`, sessions, application source, or writable data.
-Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
-long analysis does not occupy a web request worker.
-
-The authenticated landing page summarizes calculations, the five best
-automated routes from the preceding 24 hours, CPU usage, and storage usage.
-Automated calculations run hourly by default. Dashboard CPU and storage
-telemetry is sampled independently every 15 minutes by default, including when
-automated route calculations are disabled. The superadmin can configure both
-schedules, route strategy, target speed, and maximum risk under **Settings >
-Automation**. Interactive calculations take priority over queued automation
-work. Run `composer automate` to trigger a batch and telemetry sample
-immediately.
-
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx
 site and does not replace, disable, or modify existing sites. Choose another
@@ -64,6 +47,13 @@ See `Docs\How to setup API key.md` for instructions on how to setup your API key
 During first-time database setup, the installer prompts for the Google Maps API
 key with hidden input. You can enter the API key at this time or press Enter to
 skip it and add the key later under WebUI Settings. 
+
+Setup creates a non-login `cannonminer` system account, a dedicated PHP-FPM
+pool and Unix socket, private PHP session storage, and a systemd analysis
+worker. Nginx can access the socket and public assets but does not receive
+access to CannonMiner's `.env`, sessions, application source, or writable data.
+Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
+long analysis does not occupy a web request worker.
 
 When the deployment does not already have an `.env`, setup securely copies the
 one from the source checkout to `/var/www/cannonminer/.env`. If neither location
