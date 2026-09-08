@@ -1,4 +1,5 @@
-.inline-user { display:flex; gap:8px; align-items:center; }
+.inline-user { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .inline-user :is(select,input) { min-width:120px; }
+.inline-user .password-meter,.inline-user .password-hints { flex-basis:100%; }
 .table-wrap a { color:var(--green); font-weight:700; }
 @media(max-width:700px) { .inline-user { align-items:stretch; flex-direction:column; } }
