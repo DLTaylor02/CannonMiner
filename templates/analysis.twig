@@ -1,11 +1,12 @@
 {% extends 'layout.twig' %}{% block title %}Analysis | CannonMiner{% endblock %}{% block content %}
-<section class="page-head"><div><p class="kicker">Route intelligence</p><h1>Analyzing route</h1></div><p>Run executed: {{ job.created_at|date('Y-m-d H:i T') }}</p></section>
+<section class="page-head"><div><p class="kicker">Route intelligence</p><h1>Analyzing route</h1></div><p>Run executed: <time class="browser-time" datetime="{{ job.created_at|date('c') }}">{{ job.created_at|date('Y-m-d H:i T') }}</time></p></section>
 <div id="progress" class="panel"><strong id="stage">{{ job.stage }}</strong><div class="progress-track"><div id="bar" class="progress-bar"></div></div><p><span id="percent">0%</span> <span id="eta"></span></p><p id="heartbeat" class="progress-note" hidden></p></div>
 <div id="error" class="alert" hidden></div><div id="results"></div>
 <script>
 const id={{ job.id|json_encode|raw }};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eastern=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'long',year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+const browserTime=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});document.querySelectorAll('.browser-time').forEach(item=>item.textContent=browserTime.format(new Date(item.dateTime)));
 const segmentName=name=>String(name).replace('_to_',' to ');
 const duration=seconds=>{const minutes=Math.round(Number(seconds)/60);return `${Math.floor(minutes/60)} hr ${String(minutes%60).padStart(2,'0')} min`};
 function mapMarkup(r){
