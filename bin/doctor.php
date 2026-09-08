@@ -51,6 +51,7 @@ $check((int)($values['login_lockout_minutes'] ?? 0) >= 1, 'Login lockout duratio
 $check((int)($values['password_min_length'] ?? 0) >= 8, 'Minimum password length is configured');
 $check(in_array($values['password_min_strength'] ?? '', ['strong','very_strong'], true), 'Minimum password strength is configured');
 $check(in_array($values['automation_enabled'] ?? '', ['yes','no'], true), 'Route automation is configured');
+$check((int)($values['telemetry_interval_minutes'] ?? 0) >= 1, 'Dashboard telemetry interval is configured');
 
 $users = (int)$pdo->query('SELECT count(*) FROM users')->fetchColumn();
 $superadmins = (int)$pdo->query("SELECT count(*) FROM users WHERE role='superadmin'")->fetchColumn();

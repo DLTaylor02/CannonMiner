@@ -45,11 +45,13 @@ long analysis does not occupy a web request worker.
 
 The authenticated landing page summarizes calculations, the five best
 automated routes from the preceding 24 hours, CPU usage, and storage usage.
-Automated calculations run hourly by default. The superadmin can enable or
-disable them and configure their interval, minute, strategy, target speed, and
-maximum risk under **Settings > Automation**. Interactive calculations take
-priority over queued automation work. Run `composer automate` to trigger a
-batch and telemetry sample immediately.
+Automated calculations run hourly by default. Dashboard CPU and storage
+telemetry is sampled independently every 15 minutes by default, including when
+automated route calculations are disabled. The superadmin can configure both
+schedules, route strategy, target speed, and maximum risk under **Settings >
+Automation**. Interactive calculations take priority over queued automation
+work. Run `composer automate` to trigger a batch and telemetry sample
+immediately.
 
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx

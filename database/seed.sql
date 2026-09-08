@@ -5,7 +5,8 @@ INSERT INTO settings (key, value) VALUES
 ('login_rate_limit', '5'), ('login_lockout_minutes', '15'),
 ('password_min_strength', 'strong'), ('password_min_length', '12'),
 ('automation_enabled', 'yes'), ('automation_interval_hours', '1'), ('automation_start_minute', '0'),
-('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20')
+('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
+('telemetry_interval_minutes', '15')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO segments (name,start_node,end_node,origin,destination,timezone) VALUES

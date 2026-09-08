@@ -10,13 +10,17 @@ use CannonMiner\Settings;
 $root=dirname(__DIR__);$pdo=Database::connect($root);$settings=new Settings($pdo);
 if(!(bool)$pdo->query("SELECT pg_try_advisory_lock(hashtext('cannonminer.automation'))")->fetchColumn())exit(0);
 $scheduled=in_array('--scheduled',$argv,true);
-if($settings->get('automation_enabled','yes')!=='yes'&&$scheduled)exit(0);
 $interval=max(1,min(168,(int)$settings->get('automation_interval_hours','1')));
 $minute=max(0,min(59,(int)$settings->get('automation_start_minute','0')));
+$telemetryInterval=max(1,min(1440,(int)$settings->get('telemetry_interval_minutes','15')));
+$metricsDue=true;$automationDue=true;
 if($scheduled){
-    if((int)date('i')!==$minute)exit(0);
-    $latest=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
-    if($latest&&strtotime((string)$latest)>time()-$interval*3600+60)exit(0);
+    $latestMetric=$pdo->query('SELECT max(recorded_at) FROM system_metrics')->fetchColumn();
+    $metricsDue=!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60+60;
+    $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
+    $automationDue=$settings->get('automation_enabled','yes')==='yes'&&(int)date('i')===$minute
+        &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*3600+60);
+    if(!$metricsDue&&!$automationDue)exit(0);
 }
 
 function cpuSnapshot():array{
@@ -37,7 +41,8 @@ function recordMetrics(PDO $pdo,string $root):void{
     $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
 }
 
-recordMetrics($pdo,$root);
+if($metricsDue)recordMetrics($pdo,$root);
+if(!$automationDue)exit(0);
 if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
     fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);
 }

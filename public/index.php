@@ -124,7 +124,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         ? [(float)$a['avg_risk'],(float)$a['avg_seconds']]<=>[(float)$b['avg_risk'],(float)$b['avg_seconds']]
         : [(float)$a['avg_seconds'],(float)$a['avg_risk']]<=>[(float)$b['avg_seconds'],(float)$b['avg_risk']]);
     $automated=array_slice($automated,0,5);
-    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics ORDER BY recorded_at DESC LIMIT 168")->fetchAll());
+    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
     return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
@@ -160,8 +160,16 @@ $app->get('/analysis/{id}/status',function(Request $request,Response $response,a
 })->add($guard);
 
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
-    $filter=(string)($request->getQueryParams()['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
-    $statement=$pdo->prepare(<<<'SQL'
+    $query=$request->getQueryParams();$filter=(string)($query['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
+    $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run'],true))$sort='risk';
+    $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id ORDER BY u.username')->fetchAll();
+    $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
+    $conditions=[];$parameters=[];
+    if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
+    if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
+    $where=$conditions?' WHERE '.implode(' AND ',$conditions):'';
+    $order=match($sort){'expected'=>'(status=\'complete\') DESC,expected_seconds ASC NULLS LAST,risk ASC NULLS LAST,created_at DESC','run'=>'created_at DESC','risk'=>'(status=\'complete\') DESC,risk ASC NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC'};
+    $statement=$pdo->prepare(<<<SQL
         SELECT * FROM (
           SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,
             j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
@@ -173,11 +181,11 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
               THEN (j.result->0->>'risk')::float END AS risk,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'expected_seconds')::float END AS expected_seconds
-          FROM analysis_jobs j JOIN users u ON u.id=j.user_id WHERE (?='all' OR j.job_type=?)
+          FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}
         ) history
-        ORDER BY (status='complete') DESC,risk ASC NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC
-    SQL);$statement->execute([$filter,$filter]);$runs=$statement->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'csrf'=>$_SESSION['csrf']]);
+        ORDER BY {$order}
+    SQL);$statement->execute($parameters);$runs=$statement->fetchAll();
+    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);
@@ -205,7 +213,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if ($request->getMethod() === 'POST') {
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_hours','automation_start_minute','automation_speed_mph','automation_profile','automation_max_risk']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_hours','automation_start_minute','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
         if($identity['role']==='superadmin'){
             $body['collection_interval_minutes']=(string)max(5,min(10080,(int)($body['collection_interval_minutes']??60)));
@@ -220,6 +228,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             $body['automation_speed_mph']=(string)max(1,min(250,(float)($body['automation_speed_mph']??110)));
             if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
             $body['automation_max_risk']=(string)max(0,min(1,(float)($body['automation_max_risk']??.20)));
+            $body['telemetry_interval_minutes']=(string)max(1,min(1440,(int)($body['telemetry_interval_minutes']??15)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);
         }

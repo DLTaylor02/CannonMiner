@@ -38,4 +38,7 @@ PHP-FPM errors for this application are written to
 `/var/log/cannonminer/php-error.log`. Collector output remains in
 `/var/www/cannonminer/var/collector.log`; automated calculation and telemetry
 output is written to `/var/www/cannonminer/var/automation.log`. Run
-`composer automate` to enqueue an automation batch immediately.
+`composer automate` to enqueue an automation batch and record a telemetry
+sample immediately. Scheduled dashboard telemetry is collected every 15
+minutes by default and has its own superadmin setting, independent of the route
+automation schedule.
