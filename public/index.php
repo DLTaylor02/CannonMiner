@@ -178,6 +178,8 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'target_speed_mph')::float END AS target_speed_mph,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
+              THEN j.result->0->>'route' END AS route,
+            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'departure') END AS departure,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'risk')::float END AS risk,
