@@ -162,13 +162,15 @@ $app->get('/analysis/{id}/status',function(Request $request,Response $response,a
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
     $query=$request->getQueryParams();$filter=(string)($query['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
     $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run'],true))$sort='risk';
+    $direction=(string)($query['dir']??($sort==='run'?'desc':'asc'));if(!in_array($direction,['asc','desc'],true))$direction=$sort==='run'?'desc':'asc';
     $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id ORDER BY u.username')->fetchAll();
     $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
     $conditions=[];$parameters=[];
     if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
     if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
     $where=$conditions?' WHERE '.implode(' AND ',$conditions):'';
-    $order=match($sort){'expected'=>'(status=\'complete\') DESC,expected_seconds ASC NULLS LAST,risk ASC NULLS LAST,created_at DESC','run'=>'created_at DESC','risk'=>'(status=\'complete\') DESC,risk ASC NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC'};
+    $sqlDirection=strtoupper($direction);
+    $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC",'run'=>"created_at {$sqlDirection}",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC"};
     $statement=$pdo->prepare(<<<SQL
         SELECT * FROM (
           SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,
@@ -185,7 +187,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
         ) history
         ORDER BY {$order}
     SQL);$statement->execute($parameters);$runs=$statement->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'direction'=>$direction,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);
