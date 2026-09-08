@@ -1,0 +1,54 @@
+<?php
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use CannonMiner\Database;
+use CannonMiner\Router;
+use CannonMiner\Settings;
+
+$root=dirname(__DIR__);$pdo=Database::connect($root);$settings=new Settings($pdo);
+if(!(bool)$pdo->query("SELECT pg_try_advisory_lock(hashtext('cannonminer.automation'))")->fetchColumn())exit(0);
+$scheduled=in_array('--scheduled',$argv,true);
+if($settings->get('automation_enabled','yes')!=='yes'&&$scheduled)exit(0);
+$interval=max(1,min(168,(int)$settings->get('automation_interval_hours','1')));
+$minute=max(0,min(59,(int)$settings->get('automation_start_minute','0')));
+if($scheduled){
+    if((int)date('i')!==$minute)exit(0);
+    $latest=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
+    if($latest&&strtotime((string)$latest)>time()-$interval*3600+60)exit(0);
+}
+
+function cpuSnapshot():array{
+    $fields=preg_split('/\s+/',trim((string)file('/proc/stat')[0]));array_shift($fields);$values=array_map('intval',$fields);
+    return['idle'=>($values[3]??0)+($values[4]??0),'total'=>array_sum($values)];
+}
+function directoryBytes(string $path):int{
+    $bytes=0;$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path,FilesystemIterator::SKIP_DOTS));
+    foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
+}
+function recordMetrics(PDO $pdo,string $root):void{
+    $before=cpuSnapshot();usleep(250000);$after=cpuSnapshot();$total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
+    $host=max(0,min(100,100*(1-$idle/$total)));$output=(string)shell_exec("ps -u cannonminer -o %cpu= 2>/dev/null");$app=0.0;
+    foreach(preg_split('/\s+/',trim($output))?:[] as $value)if(is_numeric($value))$app+=(float)$value;
+    $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);$appBytes=directoryBytes($root);
+    $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes) VALUES (?,?,?,?,?)');
+    $save->execute([round($host,2),round($app,2),$totalDisk,$freeDisk,$appBytes]);
+    $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
+}
+
+recordMetrics($pdo,$root);
+if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
+    fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);
+}
+$router=new Router($pdo,$settings);$routes=$router->routeOptions();
+$userId=$pdo->query("SELECT id FROM users WHERE role='superadmin' LIMIT 1")->fetchColumn();
+if(!$userId)throw new RuntimeException('The automation job requires a superadmin account.');
+$insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?, 'queued',?::jsonb,'automated')");
+$speed=max(1,min(250,(float)$settings->get('automation_speed_mph','110')));$profile=(string)$settings->get('automation_profile','balanced');
+if(!in_array($profile,['balanced','fastest','reliability'],true))$profile='balanced';$risk=max(0,min(1,(float)$settings->get('automation_max_risk','.20')));
+foreach($routes as $route){
+    $input=['start'=>$route['start'],'end'=>$route['end'],'speed'=>$speed,'profile'=>$profile,'risk'=>$risk,'segments'=>$route['segments']];
+    $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR)]);
+}
+printf("Queued %d automated route calculations.\n",count($routes));

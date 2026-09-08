@@ -36,4 +36,6 @@ journalctl -u cannonminer-worker.service
 
 PHP-FPM errors for this application are written to
 `/var/log/cannonminer/php-error.log`. Collector output remains in
-`/var/www/cannonminer/var/collector.log`.
+`/var/www/cannonminer/var/collector.log`; automated calculation and telemetry
+output is written to `/var/www/cannonminer/var/automation.log`. Run
+`composer automate` to enqueue an automation batch immediately.

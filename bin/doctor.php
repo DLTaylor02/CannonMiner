@@ -32,7 +32,7 @@ try {
     exit(1);
 }
 
-$tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs'];
+$tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','system_metrics'];
 foreach ($tables as $table) {
     $statement = $pdo->prepare("SELECT to_regclass(?) IS NOT NULL");
     $statement->execute(['public.' . $table]);
@@ -50,6 +50,7 @@ $check((int)($values['login_rate_limit'] ?? 0) >= 1, 'Login rate limit is config
 $check((int)($values['login_lockout_minutes'] ?? 0) >= 1, 'Login lockout duration is configured');
 $check((int)($values['password_min_length'] ?? 0) >= 8, 'Minimum password length is configured');
 $check(in_array($values['password_min_strength'] ?? '', ['strong','very_strong'], true), 'Minimum password strength is configured');
+$check(in_array($values['automation_enabled'] ?? '', ['yes','no'], true), 'Route automation is configured');
 
 $users = (int)$pdo->query('SELECT count(*) FROM users')->fetchColumn();
 $superadmins = (int)$pdo->query("SELECT count(*) FROM users WHERE role='superadmin'")->fetchColumn();

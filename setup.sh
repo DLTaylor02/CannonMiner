@@ -339,8 +339,9 @@ $SUDO systemctl enable cannonminer-worker.service
 $SUDO systemctl restart cannonminer-worker.service
 
 info "Installing scheduled collector"
-mkdir -p "$ROOT_DIR/var"
-touch "$ROOT_DIR/var/collector.log"
+  mkdir -p "$ROOT_DIR/var"
+  touch "$ROOT_DIR/var/collector.log"
+  touch "$ROOT_DIR/var/automation.log"
 as_user "$INSTALL_USER" composer licenses --format=json --no-dev > "$ROOT_DIR/var/composer-licenses.json"
 $SUDO chown -R "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$ROOT_DIR/var"
 $SUDO chmod 0750 "$ROOT_DIR/var"
@@ -355,7 +356,10 @@ if as_user "$INSTALL_USER" crontab -l > "$LEGACY_CRON_TMP" 2>/dev/null; then
     info "Removed legacy Python collector entries from $INSTALL_USER's crontab"
   fi
 fi
-printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$ROOT_DIR/var/collector.log' 2>&1" > "$CRON_TMP"
+{
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$ROOT_DIR/var/collector.log' 2>&1"
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/automate.php --scheduled >> '$ROOT_DIR/var/automation.log' 2>&1"
+} > "$CRON_TMP"
 $SUDO install -m 0644 "$CRON_TMP" /etc/cron.d/cannonminer
 
 info "Running final checks"

@@ -43,6 +43,14 @@ access to CannonMiner's `.env`, sessions, application source, or writable data.
 Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
 long analysis does not occupy a web request worker.
 
+The authenticated landing page summarizes calculations, the five best
+automated routes from the preceding 24 hours, CPU usage, and storage usage.
+Automated calculations run hourly by default. The superadmin can enable or
+disable them and configure their interval, minute, strategy, target speed, and
+maximum risk under **Settings > Automation**. Interactive calculations take
+priority over queued automation work. Run `composer automate` to trigger a
+batch and telemetry sample immediately.
+
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx
 site and does not replace, disable, or modify existing sites. Choose another
@@ -111,3 +119,4 @@ The three highest-ranked combinations are displayed. If no option satisfies the 
 - `templates/`: Twig UI
 - `bin/collect.php`: manual and scheduled collector
 - `bin/analyze-worker.php`: systemd-managed background analysis worker
+- `bin/automate.php`: scheduled route calculations and system telemetry sampling

@@ -51,7 +51,21 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
     finished_at TIMESTAMPTZ
 );
 ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT 'best';
+ALTER TABLE analysis_jobs DROP CONSTRAINT IF EXISTS analysis_jobs_job_type_check;
+ALTER TABLE analysis_jobs ADD CONSTRAINT analysis_jobs_job_type_check CHECK (job_type IN ('best','custom','automated'));
 CREATE INDEX IF NOT EXISTS analysis_jobs_user_time_idx ON analysis_jobs(user_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    host_cpu_percent NUMERIC(6,2) NOT NULL,
+    app_cpu_percent NUMERIC(6,2) NOT NULL,
+    disk_total_bytes BIGINT NOT NULL,
+    disk_free_bytes BIGINT NOT NULL,
+    app_bytes BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS system_metrics_time_idx ON system_metrics(recorded_at DESC);
 
 CREATE TABLE IF NOT EXISTS segments (
     id BIGSERIAL PRIMARY KEY,

@@ -36,7 +36,7 @@ while (true) {
         SELECT id,input
         FROM analysis_jobs
         WHERE status='queued'
-        ORDER BY created_at
+        ORDER BY (job_type='automated'),created_at
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     SQL)->fetch();
@@ -61,7 +61,7 @@ while (true) {
             (string) $values['profile'], (float) $values['risk'],
             static function (int $current, int $total, string $stage, ?float $eta = null) use ($update, &$currentId): void {
                 $update->execute([$current, max(1, $total), $stage, $eta === null ? null : (int) ceil($eta), $currentId]);
-            }
+            },isset($values['segments'])&&is_array($values['segments'])?$values['segments']:null
         );
         foreach ($results as &$result) {
             if ($result['departure'] instanceof DateTimeInterface) $result['departure'] = $result['departure']->format(DATE_ATOM);

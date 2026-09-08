@@ -103,19 +103,49 @@ $app->post('/theme', function(Request $request,Response $response)use($pdo,$csrf
 })->add($guard);
 $app->get('/favicon.ico', static fn(Request $request,Response $response):Response => $response->withStatus(204));
 
-$app->map(['GET','POST'], '/', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
+$app->get('/',function(Request $request,Response $response)use($pdo,$settings,$render):Response{
+    $summary=$pdo->query(<<<'SQL'
+        SELECT count(*) FILTER (WHERE status='complete')::int AS completed,
+          count(*) FILTER (WHERE created_at>now()-interval '24 hours')::int AS runs_24h,
+          min((result->0->>'risk')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS best_risk,
+          avg((result->0->>'expected_seconds')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS avg_seconds
+        FROM analysis_jobs
+    SQL)->fetch();
+    $automated=$pdo->query(<<<'SQL'
+        SELECT result->0->>'route' AS route,avg((result->0->>'risk')::float) AS avg_risk,
+          avg((result->0->>'expected_seconds')::float) AS avg_seconds,count(*)::int AS runs,
+          (array_agg(id ORDER BY finished_at DESC))[1] AS latest_id
+        FROM analysis_jobs WHERE job_type='automated' AND status='complete' AND finished_at>now()-interval '24 hours'
+          AND jsonb_array_length(result)>0 GROUP BY result->0->>'route'
+        ORDER BY avg_seconds,avg_risk
+    SQL)->fetchAll();
+    $automationProfile=$settings->get('automation_profile','balanced');
+    usort($automated,static fn(array $a,array $b):int=>$automationProfile==='reliability'
+        ? [(float)$a['avg_risk'],(float)$a['avg_seconds']]<=>[(float)$b['avg_risk'],(float)$b['avg_seconds']]
+        : [(float)$a['avg_seconds'],(float)$a['avg_risk']]<=>[(float)$b['avg_seconds'],(float)$b['avg_risk']]);
+    $automated=array_slice($automated,0,5);
+    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics ORDER BY recorded_at DESC LIMIT 168")->fetchAll());
+    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->map(['GET','POST'], '/plan', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
     $nodes = $router->nodes(); $input = ['start'=>'redball','end'=>'portofino','speed'=>(float)$settings->get('default_speed_mph','110'),
         'profile'=>'balanced','risk'=>(float)$settings->get('default_max_delay_risk','.20')];
-    $results = []; $error = null;
+    $routes=$router->routeOptions();$results = []; $error = null;
     if ($request->getMethod() === 'POST') {
         $input = array_merge($input, (array)$request->getParsedBody());
         if($identity['role']==='user')$input['risk']=(float)$settings->get('default_max_delay_risk','.20');
         $token=(string)($input['_token']??'');if(!hash_equals($_SESSION['csrf']??'',$token))throw new RuntimeException('Your session expired.');
-        $id=bin2hex(random_bytes(16));$statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input) VALUES (?,?,'queued',?::jsonb)");
-        $statement->execute([$id,$_SESSION['user_id'],json_encode(['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>(float)$input['risk']],JSON_THROW_ON_ERROR)]);
+        $jobType=($input['_mode']??'best')==='custom'?'custom':'best';$segments=null;
+        if($jobType==='custom'){$selected=$routes[(int)($input['route_index']??-1)]??null;if(!$selected){$error='Select an available custom route.';}else{$input['start']=$selected['start'];$input['end']=$selected['end'];$segments=$selected['segments'];}}
+        if($error)return $render($request,$response,'dashboard.twig',['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+        $id=bin2hex(random_bytes(16));
+        $statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?,'queued',?::jsonb,?)");
+        $payload=['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>(float)$input['risk']];if($segments!==null)$payload['segments']=$segments;
+        $statement->execute([$id,$_SESSION['user_id'],json_encode($payload,JSON_THROW_ON_ERROR),$jobType]);
         return $response->withHeader('Location','/analysis/'.$id)->withStatus(302);
     }
-    return $render($request, $response, 'dashboard.twig', ['nodes'=>$nodes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+    return $render($request, $response, 'dashboard.twig', ['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
@@ -130,9 +160,10 @@ $app->get('/analysis/{id}/status',function(Request $request,Response $response,a
 })->add($guard);
 
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
-    $runs=$pdo->query(<<<'SQL'
+    $filter=(string)($request->getQueryParams()['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
+    $statement=$pdo->prepare(<<<'SQL'
         SELECT * FROM (
-          SELECT j.id,u.username,j.status,j.stage,j.created_at,
+          SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,
             j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'target_speed_mph')::float END AS target_speed_mph,
@@ -142,11 +173,11 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
               THEN (j.result->0->>'risk')::float END AS risk,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'expected_seconds')::float END AS expected_seconds
-          FROM analysis_jobs j JOIN users u ON u.id=j.user_id
+          FROM analysis_jobs j JOIN users u ON u.id=j.user_id WHERE (?='all' OR j.job_type=?)
         ) history
         ORDER BY (status='complete') DESC,risk ASC NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC
-    SQL)->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'csrf'=>$_SESSION['csrf']]);
+    SQL);$statement->execute([$filter,$filter]);$runs=$statement->fetchAll();
+    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);
@@ -174,7 +205,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if ($request->getMethod() === 'POST') {
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_hours','automation_start_minute','automation_speed_mph','automation_profile','automation_max_risk']);
         $body=array_intersect_key($body,array_flip($allowed));
         if($identity['role']==='superadmin'){
             $body['collection_interval_minutes']=(string)max(5,min(10080,(int)($body['collection_interval_minutes']??60)));
@@ -183,16 +214,20 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             $body['login_lockout_minutes']=(string)max(1,min(1440,(int)($body['login_lockout_minutes']??15)));
             $body['password_min_length']=(string)max(8,min(64,(int)($body['password_min_length']??12)));
             if(!in_array($body['password_min_strength']??'',['strong','very_strong'],true))$body['password_min_strength']='strong';
+            $body['automation_enabled']=isset($body['automation_enabled'])?'yes':'no';
+            $body['automation_interval_hours']=(string)max(1,min(168,(int)($body['automation_interval_hours']??1)));
+            $body['automation_start_minute']=(string)max(0,min(59,(int)($body['automation_start_minute']??0)));
+            $body['automation_speed_mph']=(string)max(1,min(250,(float)($body['automation_speed_mph']??110)));
+            if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
+            $body['automation_max_risk']=(string)max(0,min(1,(float)($body['automation_max_risk']??.20)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);
         }
         $settings->save($body);$message='Settings saved.';
     }
     $lastRun=$pdo->query(<<<'SQL'
-        SELECT *,to_char(finished_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS finished_at_iso
-        FROM collection_runs
-        WHERE status='success' AND finished_at IS NOT NULL
-        ORDER BY finished_at DESC LIMIT 1
+        SELECT *,to_char(coalesce(finished_at,started_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_at_iso
+        FROM collection_runs ORDER BY started_at DESC LIMIT 1
     SQL)->fetch();
     $values=$settings->all(); $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);

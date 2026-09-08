@@ -3,7 +3,9 @@ INSERT INTO settings (key, value) VALUES
 ('default_max_delay_risk', '0.20'), ('candidate_routes', '25'), ('departure_interval_minutes', '15'),
 ('collection_interval_minutes', '60'), ('google_data_storage_authorized', 'no'),
 ('login_rate_limit', '5'), ('login_lockout_minutes', '15'),
-('password_min_strength', 'strong'), ('password_min_length', '12')
+('password_min_strength', 'strong'), ('password_min_length', '12'),
+('automation_enabled', 'yes'), ('automation_interval_hours', '1'), ('automation_start_minute', '0'),
+('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO segments (name,start_node,end_node,origin,destination,timezone) VALUES

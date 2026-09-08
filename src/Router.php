@@ -26,7 +26,26 @@ final class Router
         return array_column($rows, 'node');
     }
 
-    public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null): array
+    public function routeOptions(): array
+    {
+        $rows=$this->pdo->query(<<<'SQL'
+            SELECT s.name,s.start_node,s.end_node FROM segments s WHERE s.enabled AND EXISTS (
+              SELECT 1 FROM measurements m WHERE m.segment_id=s.id AND m.collected_at IS NOT NULL
+                AND m.duration_in_traffic_seconds>0 AND m.duration_seconds>0 AND m.distance_meters>0
+            ) ORDER BY s.name
+        SQL)->fetchAll();
+        $adjacent=[];$incoming=[];
+        foreach($rows as $row){$adjacent[$row['start_node']][]=$row;$incoming[$row['end_node']]=true;}
+        $starts=[];foreach(array_keys($adjacent) as $node)if(!isset($incoming[$node]))$starts[]=$node;
+        $routes=[];$walk=function(string $node,array $segments,array $nodes)use(&$walk,&$routes,$adjacent):void{
+            if(!isset($adjacent[$node])){if($segments)$routes[]=['start'=>$nodes[0],'end'=>$node,'segments'=>$segments,'label'=>implode(' -> ',$nodes)];return;}
+            foreach($adjacent[$node] as $segment){$next=$segment['end_node'];if(in_array($next,$nodes,true))continue;$walk($next,[...$segments,$segment['name']],[...$nodes,$next]);}
+        };
+        foreach($starts as $start)$walk($start,[],[$start]);
+        return $routes;
+    }
+
+    public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null, ?array $fixedSegments = null): array
     {
         if ($mph <= 0 || $maxRisk < 0 || $maxRisk > 1 || !in_array($profile, ['balanced','fastest','reliability'], true)) {
             throw new RuntimeException('Invalid routing options.');
@@ -36,7 +55,9 @@ final class Router
         $this->representativeDates = []; $this->predictionCache = [];
         $progress(0,1,'Loading traffic observations');
         $segments = $this->loadSegments($timezone,$progress);
-        $routes = $this->candidateRoutes($segments, $start, $end, max(1, (int)$this->settings->get('candidate_routes','25')), $mph);
+        $routes = $fixedSegments===null
+            ? $this->candidateRoutes($segments, $start, $end, max(1, (int)$this->settings->get('candidate_routes','25')), $mph)
+            : $this->fixedRoute($segments,$start,$end,$fixedSegments);
         if ($routes === []) throw new RuntimeException("No route exists from {$start} to {$end}.");
         $departureInterval=max(5,min(60,(int)$this->settings->get('departure_interval_minutes','15')));
         $departures = $this->departurePatterns($timezone,$departureInterval);
@@ -69,6 +90,15 @@ final class Router
         }
         unset($evaluation);
         return $best;
+    }
+
+    private function fixedRoute(array $segments,string $start,string $end,array $names): array
+    {
+        if($names===[])throw new RuntimeException('Select a route.');
+        $route=[];$node=$start;
+        foreach($names as $name){$segment=$segments[(string)$name]??null;if(!$segment||$segment['start']!==$node)throw new RuntimeException('The selected route is no longer available.');$route[]=$segment;$node=$segment['end'];}
+        if($node!==$end)throw new RuntimeException('The selected route does not reach the destination.');
+        return[$route];
     }
 
     public function trends(): array
