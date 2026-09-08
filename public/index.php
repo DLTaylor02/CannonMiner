@@ -18,7 +18,7 @@ $root = dirname(__DIR__); $pdo = Database::connect($root); $settings = new Setti
 $remote=(string)($_SERVER['REMOTE_ADDR']??'');$trustedProxies=array_filter(array_map('trim',explode(',',(string)getenv('TRUSTED_PROXIES'))));
 $secureRequest=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')||(in_array($remote,$trustedProxies,true)&&strtolower(trim(explode(',',(string)($_SERVER['HTTP_X_FORWARDED_PROTO']??''))[0]))==='https');
 session_name('CannonMinerSession');
-session_start(['use_strict_mode'=>true,'cookie_httponly'=>true,'cookie_samesite'=>'Lax','cookie_secure'=>$secureRequest]);
+session_start(['cookie_samesite'=>'Lax','cookie_secure'=>$secureRequest]);
 
 $passwordPolicy = new PasswordPolicy($settings); $loginLimiter = new LoginRateLimiter($pdo, $settings);
 $app = AppFactory::create(); $twig = Twig::create($root . '/templates', ['cache' => false]);
