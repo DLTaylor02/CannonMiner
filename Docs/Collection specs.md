@@ -28,8 +28,11 @@ API request that it sends. Static map images are served through an authenticated
 CannonMiner endpoint so the application can count the request and avoid sending
 the API key to the browser. Request telemetry is retained for 90 days.
 
-The dashboard shows observed requests per hour for the last 48 hours and a
-24-hour forecast. The forecast combines the configured collection frequency and
+The dashboard shows a cumulative month-to-date request count and forecasts the
+total through the end of the current calendar month. For time before request
+tracking was installed, successful Directions calls are reconstructed from
+stored measurements. Historical failed calls and Static Maps loads cannot be
+recovered. The forecast combines the configured collection frequency and
 enabled segment count with the average hourly static-map usage from the previous
 24 hours. It is an operational estimate, not an authoritative Google billing or
 quota report; consult Google Cloud for billable usage.

@@ -138,11 +138,27 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $automated=array_slice($automated,0,5);
     $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics WHERE cpu_metric_version=2 ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
     $apiActual=$pdo->query(<<<'SQL'
-        SELECT bucket,count(api_request.id)::int AS requests
-        FROM generate_series(date_trunc('hour',now())-interval '47 hours',date_trunc('hour',now()),interval '1 hour') AS bucket
-        LEFT JOIN google_api_requests api_request
-          ON api_request.requested_at>=bucket AND api_request.requested_at<bucket+interval '1 hour'
-        GROUP BY bucket ORDER BY bucket
+        WITH tracking AS (
+          SELECT min(requested_at) FILTER (WHERE service='directions') AS directions_started
+          FROM google_api_requests
+        ), usage AS (
+          SELECT requested_at,0::int AS reconstructed
+          FROM google_api_requests WHERE requested_at>=date_trunc('month',now())
+          UNION ALL
+          SELECT collected_at,1
+          FROM measurements CROSS JOIN tracking
+          WHERE collected_at>=date_trunc('month',now())
+            AND collected_at<coalesce(directions_started,now())
+        ), hourly AS (
+          SELECT bucket,count(usage.requested_at)::bigint AS requests,
+            coalesce(sum(usage.reconstructed),0)::bigint AS reconstructed_requests
+          FROM generate_series(date_trunc('month',now()),date_trunc('hour',now()),interval '1 hour') AS bucket
+          LEFT JOIN usage ON usage.requested_at>=bucket AND usage.requested_at<bucket+interval '1 hour'
+          GROUP BY bucket
+        )
+        SELECT bucket,sum(requests) OVER (ORDER BY bucket)::bigint AS requests,
+          sum(reconstructed_requests) OVER (ORDER BY bucket)::bigint AS reconstructed_requests
+        FROM hourly ORDER BY bucket
     SQL)->fetchAll();
     foreach($apiActual as &$point)$point['bucket']=(new DateTimeImmutable((string)$point['bucket']))->format(DATE_ATOM);
     unset($point);
@@ -151,7 +167,10 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $googleReady=$settings->get('google_data_storage_authorized','no')==='yes'&&trim($settings->get('google_maps_api_key',''))!=='';
     $directionsPerHour=$googleReady?$enabledSegments*60/$collectionInterval:0.0;
     $staticMapsPerHour=(float)$pdo->query("SELECT count(*)/24.0 FROM google_api_requests WHERE service='static_map' AND requested_at>=now()-interval '24 hours'")->fetchColumn();
-    $apiUsage=['actual'=>$apiActual,'forecast_per_hour'=>round($directionsPerHour+$staticMapsPerHour,2)];
+    $forecastEnd=$pdo->query("SELECT date_trunc('month',now())+interval '1 month'")->fetchColumn();
+    $apiUsage=['actual'=>$apiActual,'forecast_per_hour'=>round($directionsPerHour+$staticMapsPerHour,2),
+        'forecast_end'=>(new DateTimeImmutable((string)$forecastEnd))->format(DATE_ATOM),
+        'reconstructed_requests'=>(int)($apiActual[array_key_last($apiActual)]['reconstructed_requests']??0)];
     return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
