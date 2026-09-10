@@ -6,6 +6,7 @@ use CannonMiner\LoginRateLimiter;
 use CannonMiner\PasswordPolicy;
 use CannonMiner\Router;
 use CannonMiner\Settings;
+use GuzzleHttp\Client;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -136,7 +137,22 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         : [(float)$a['avg_seconds'],(float)$a['avg_risk']]<=>[(float)$b['avg_seconds'],(float)$b['avg_risk']]);
     $automated=array_slice($automated,0,5);
     $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics WHERE cpu_metric_version=2 ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
-    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'csrf'=>$_SESSION['csrf']]);
+    $apiActual=$pdo->query(<<<'SQL'
+        SELECT bucket,count(api_request.id)::int AS requests
+        FROM generate_series(date_trunc('hour',now())-interval '47 hours',date_trunc('hour',now()),interval '1 hour') AS bucket
+        LEFT JOIN google_api_requests api_request
+          ON api_request.requested_at>=bucket AND api_request.requested_at<bucket+interval '1 hour'
+        GROUP BY bucket ORDER BY bucket
+    SQL)->fetchAll();
+    foreach($apiActual as &$point)$point['bucket']=(new DateTimeImmutable((string)$point['bucket']))->format(DATE_ATOM);
+    unset($point);
+    $enabledSegments=(int)$pdo->query('SELECT count(*) FROM segments WHERE enabled')->fetchColumn();
+    $collectionInterval=max(5,min(10080,(int)$settings->get('collection_interval_minutes','60')));
+    $googleReady=$settings->get('google_data_storage_authorized','no')==='yes'&&trim($settings->get('google_maps_api_key',''))!=='';
+    $directionsPerHour=$googleReady?$enabledSegments*60/$collectionInterval:0.0;
+    $staticMapsPerHour=(float)$pdo->query("SELECT count(*)/24.0 FROM google_api_requests WHERE service='static_map' AND requested_at>=now()-interval '24 hours'")->fetchColumn();
+    $apiUsage=['actual'=>$apiActual,'forecast_per_hour'=>round($directionsPerHour+$staticMapsPerHour,2)];
+    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->map(['GET','POST'], '/plan', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
@@ -164,10 +180,28 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
     if(!$job)return $response->withStatus(404);
     return $render($request,$response,'analysis.twig',['job'=>$job,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
+$app->get('/analysis/{id}/map/{rank}',function(Request $request,Response $response,array $args)use($pdo):Response{
+    $statement=$pdo->prepare("SELECT result FROM analysis_jobs WHERE id=? AND status='complete'");$statement->execute([$args['id']]);
+    $stored=$statement->fetchColumn();if($stored===false)return $response->withStatus(404);
+    $results=json_decode((string)$stored,true);$rank=filter_var($args['rank'],FILTER_VALIDATE_INT);
+    $url=$rank!==false&&isset($results[$rank]['map_url'])?(string)$results[$rank]['map_url']:'';$parts=parse_url($url);
+    if(!$parts||($parts['scheme']??'')!=='https'||($parts['host']??'')!=='maps.googleapis.com'||($parts['path']??'')!=='/maps/api/staticmap')return $response->withStatus(404);
+    try{
+        $pdo->exec("INSERT INTO google_api_requests(service) VALUES ('static_map')");
+        $upstream=(new Client(['timeout'=>20,'connect_timeout'=>5,'http_errors'=>false]))->get($url);
+        $response->getBody()->write((string)$upstream->getBody());
+        return $response->withStatus($upstream->getStatusCode())->withHeader('Content-Type',$upstream->getHeaderLine('Content-Type')?:'image/png')->withHeader('Cache-Control','private, no-store');
+    }catch(Throwable){return $response->withStatus(502)->withHeader('Cache-Control','private, no-store');}
+})->add($guard);
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
     $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result FROM analysis_jobs WHERE id=?');
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
     $job['updated_at']=(new DateTimeImmutable((string)$job['updated_at']))->format(DATE_ATOM);
+    if($job['result']!==null){
+        $results=is_array($job['result'])?$job['result']:json_decode((string)$job['result'],true);
+        if(is_array($results))foreach($results as &$result){$result['map_available']=!empty($result['map_url']);unset($result['map_url']);}unset($result);
+        $job['result']=$results;
+    }
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 

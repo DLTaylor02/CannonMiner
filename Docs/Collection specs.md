@@ -20,3 +20,16 @@ that the operator's Google agreement permits persistent traffic-data storage.
 Enable both the Directions API and Maps Static API for that Google Cloud project.
 Static route previews use stored overview polylines and color each segment from
 green to red according to its simulated likelihood of a nontrivial slowdown.
+
+## Google API request telemetry
+
+CannonMiner records each attempted Directions API request and each Maps Static
+API request that it sends. Static map images are served through an authenticated
+CannonMiner endpoint so the application can count the request and avoid sending
+the API key to the browser. Request telemetry is retained for 90 days.
+
+The dashboard shows observed requests per hour for the last 48 hours and a
+24-hour forecast. The forecast combines the configured collection frequency and
+enabled segment count with the average hourly static-map usage from the previous
+24 hours. It is an operational estimate, not an authoritative Google billing or
+quota report; consult Google Cloud for billable usage.
