@@ -56,6 +56,8 @@ Host and CannonMiner CPU are sampled over the same 250 ms interval and use the
 same whole-system `0-100%` scale. CannonMiner CPU sums process ticks for the
 dedicated system account, so the green line represents the portion of the red
 host line attributable to CannonMiner rather than a per-core process average.
+Telemetry recorded by the older per-process method is retained in PostgreSQL
+but excluded from the graph because its units are not directly comparable.
 
 Dashboard CannonMiner storage includes the deployed application tree, every
 file and rotated archive under `/var/log/cannonminer`, the dedicated session

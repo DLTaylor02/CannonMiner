@@ -63,8 +63,13 @@ CREATE TABLE IF NOT EXISTS system_metrics (
     app_cpu_percent NUMERIC(6,2) NOT NULL,
     disk_total_bytes BIGINT NOT NULL,
     disk_free_bytes BIGINT NOT NULL,
-    app_bytes BIGINT NOT NULL
+    app_bytes BIGINT NOT NULL,
+    cpu_metric_version SMALLINT NOT NULL DEFAULT 2
 );
+ALTER TABLE system_metrics ADD COLUMN IF NOT EXISTS cpu_metric_version SMALLINT;
+UPDATE system_metrics SET cpu_metric_version=1 WHERE cpu_metric_version IS NULL;
+ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET DEFAULT 2;
+ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET NOT NULL;
 CREATE INDEX IF NOT EXISTS system_metrics_time_idx ON system_metrics(recorded_at DESC);
 
 CREATE TABLE IF NOT EXISTS segments (

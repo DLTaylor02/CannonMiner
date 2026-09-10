@@ -25,12 +25,14 @@ if($scheduled){
 
 function cpuSnapshot():array{
     $fields=preg_split('/\s+/',trim((string)file('/proc/stat')[0]));array_shift($fields);$values=array_map('intval',$fields);
-    return['idle'=>($values[3]??0)+($values[4]??0),'total'=>array_sum($values)];
+    return['idle'=>($values[3]??0)+($values[4]??0),'total'=>array_sum(array_slice($values,0,8))];
 }
-function currentUid():int{
-    $status=(string)file_get_contents('/proc/self/status');
-    if(!preg_match('/^Uid:\s+(\d+)/m',$status,$match))throw new RuntimeException('Unable to determine the telemetry process UID.');
-    return(int)$match[1];
+function cannonMinerUid():int{
+    foreach(file('/etc/passwd',FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[] as $line){
+        $fields=explode(':',$line);
+        if(($fields[0]??'')==='cannonminer'&&isset($fields[2]))return(int)$fields[2];
+    }
+    throw new RuntimeException('The cannonminer system account was not found.');
 }
 function userCpuSnapshot(int $uid):array{
     $snapshot=[];
@@ -39,13 +41,13 @@ function userCpuSnapshot(int $uid):array{
         if($status===false||!preg_match('/^Uid:\s+(\d+)/m',$status,$match)||(int)$match[1]!==$uid)continue;
         $stat=@file_get_contents($statPath);$close=$stat===false?false:strrpos($stat,')');
         if($close===false)continue;$fields=preg_split('/\s+/',trim(substr($stat,$close+1)));
-        if(count($fields)<13)continue;$snapshot[$pid]=(int)$fields[11]+(int)$fields[12];
+        if(count($fields)<20)continue;$snapshot[$pid]=['ticks'=>(int)$fields[11]+(int)$fields[12],'started'=>(int)$fields[19]];
     }
     return$snapshot;
 }
 function userCpuDelta(array $before,array $after):int{
     $ticks=0;
-    foreach($after as $pid=>$value)if(isset($before[$pid]))$ticks+=max(0,$value-$before[$pid]);
+    foreach($after as $pid=>$value)if(isset($before[$pid])&&$before[$pid]['started']===$value['started'])$ticks+=max(0,$value['ticks']-$before[$pid]['ticks']);
     return$ticks;
 }
 function directoryBytes(string $path):int{
@@ -54,13 +56,13 @@ function directoryBytes(string $path):int{
     foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
 }
 function recordMetrics(PDO $pdo,string $root):void{
-    $uid=currentUid();$before=cpuSnapshot();$appBefore=userCpuSnapshot($uid);usleep(250000);$appAfter=userCpuSnapshot($uid);$after=cpuSnapshot();
+    $uid=cannonMinerUid();$before=cpuSnapshot();$appBefore=userCpuSnapshot($uid);usleep(250000);$appAfter=userCpuSnapshot($uid);$after=cpuSnapshot();
     $total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
     $host=max(0,min(100,100*(1-$idle/$total)));$app=max(0,min($host,100*userCpuDelta($appBefore,$appAfter)/$total));
     $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);
     $databaseBytes=(int)$pdo->query('SELECT pg_database_size(current_database())')->fetchColumn();
     $appBytes=$databaseBytes+directoryBytes($root)+directoryBytes('/var/log/cannonminer')+directoryBytes('/var/lib/cannonminer/sessions');
-    $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes) VALUES (?,?,?,?,?)');
+    $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes,cpu_metric_version) VALUES (?,?,?,?,?,2)');
     $save->execute([round($host,2),round($app,2),$totalDisk,$freeDisk,$appBytes]);
     $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
 }

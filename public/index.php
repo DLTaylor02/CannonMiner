@@ -135,7 +135,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         ? [(float)$a['avg_risk'],(float)$a['avg_seconds']]<=>[(float)$b['avg_risk'],(float)$b['avg_seconds']]
         : [(float)$a['avg_seconds'],(float)$a['avg_risk']]<=>[(float)$b['avg_seconds'],(float)$b['avg_risk']]);
     $automated=array_slice($automated,0,5);
-    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
+    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics WHERE cpu_metric_version=2 ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
     return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
