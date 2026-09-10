@@ -60,3 +60,14 @@ preserving `.env`, `vendor/`, and `var/`. `setup.sh`, `composer.json`, and the
 database migrations intentionally remain under `/var/www/cannonminer` for
 repeatable upgrades and recovery; none are reachable through the configured
 Nginx `public/` document root.
+
+Setup creates a non-login `cannonminer` system account, a dedicated PHP-FPM
+pool and Unix socket, private PHP session storage, and a systemd analysis
+worker. Nginx can access the socket and public assets but does not receive
+access to CannonMiner's `.env`, sessions, application source, or writable data.
+Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
+long analysis does not occupy a web request worker.
+
+## Reverse proxies
+
+CannonMiner uses the direct client address supplied by Nginx by default. If another trusted reverse proxy sits in front of CannonMiner's Nginx site, add that proxy's IP address to `TRUSTED_PROXIES` in `.env`. Multiple exact IPv4 or IPv6 addresses are comma-separated. Forwarded client-address headers are ignored unless the immediate peer appears in this list.

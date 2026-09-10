@@ -37,6 +37,10 @@ The script installs and validates dependencies as well as installing the app its
 - cron
 - logrotate
 
+When the deployment does not already have an `.env`, setup securely copies the
+one from the source checkout to `/var/www/cannonminer/.env`. If neither location
+has one, setup creates a new `cannonminer` database and application account.
+
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx
 site and does not replace, disable, or modify existing sites. Choose another
@@ -47,18 +51,7 @@ for an unattended run, such as `./setup.sh 3637`.
 See `Docs\How to setup API key.md` for instructions on how to setup your API key.
 During first-time database setup, the installer prompts for the Google Maps API
 key with hidden input. You can enter the API key at this time or press Enter to
-skip it and add the key later under WebUI Settings. 
-
-Setup creates a non-login `cannonminer` system account, a dedicated PHP-FPM
-pool and Unix socket, private PHP session storage, and a systemd analysis
-worker. Nginx can access the socket and public assets but does not receive
-access to CannonMiner's `.env`, sessions, application source, or writable data.
-Analysis requests are queued in PostgreSQL and processed outside PHP-FPM so a
-long analysis does not occupy a web request worker.
-
-When the deployment does not already have an `.env`, setup securely copies the
-one from the source checkout to `/var/www/cannonminer/.env`. If neither location
-has one, setup creates a new `cannonminer` database and application account.
+skip it and add the key later under WebUI Settings.
 
 After the script completes, it prints the address including the selected port,
 for example `http://192.168.1.106:3636/`.
@@ -85,10 +78,6 @@ composer reset-superadmin-password
 - Sign-in failures are limited by both username and client address. The superadmin configures the attempt limit and temporary lockout duration under Settings.
 - Passwords are checked against the Have I Been Pwned Pwned Passwords range service. Only the first five characters of a locally calculated SHA-1 hash are sent. If the service is unavailable, a locally valid password is accepted and the user receives an advisory.
 
-### Reverse proxies
-
-CannonMiner uses the direct client address supplied by Nginx by default. If another trusted reverse proxy sits in front of CannonMiner's Nginx site, add that proxy's IP address to `TRUSTED_PROXIES` in `.env`. Multiple exact IPv4 or IPv6 addresses are comma-separated. Forwarded client-address headers are ignored unless the immediate peer appears in this list.
-
 ## Route selection
 
 CannonMiner finds the available routes between the selected starting point and destination. For each route, it tests departure times throughout every weekday and month represented in the collected traffic data, using 15-minute intervals by default.
@@ -101,15 +90,3 @@ Each route and departure-time combination is evaluated using:
 - The probability of a meaningful slowdown on any segment or across the complete route
 Options exceeding the selected maximum delay risk are excluded when possible. Maximum-risk fields in the WebUI are entered as percentages from `0` to `100`; for example, enter `43` for 43%. Balanced and Fastest then favor the lowest expected travel time, with delay risk used as a tie-breaker. Reliability favors the lowest delay risk first, with expected travel time used as a tie-breaker.
 The three highest-ranked combinations are displayed. If no option satisfies the maximum-risk setting, CannonMiner displays the best available alternatives instead of returning no result.
-
-## Layout
-
-- `public/`: Nginx web root
-- `src/Router.php`: route scoring
-- `src/Collector.php`: Google Directions collection
-- `database/`: schema, seeds, and legacy migration
-- `config/nginx.conf.example`: isolated Nginx site template used by setup
-- `templates/`: Twig UI
-- `bin/collect.php`: manual and scheduled collector
-- `bin/analyze-worker.php`: systemd-managed background analysis worker
-- `bin/automate.php`: scheduled route calculations and system telemetry sampling
