@@ -114,11 +114,22 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $automated=$pdo->query(<<<'SQL'
         SELECT result->0->>'route' AS route,avg((result->0->>'risk')::float) AS avg_risk,
           avg((result->0->>'expected_seconds')::float) AS avg_seconds,count(*)::int AS runs,
+          avg((result->0->>'risk')::float) FILTER (WHERE finished_at>now()-interval '12 hours') AS recent_risk,
+          avg((result->0->>'risk')::float) FILTER (WHERE finished_at<=now()-interval '12 hours') AS previous_risk,
           (array_agg(id ORDER BY finished_at DESC))[1] AS latest_id
         FROM analysis_jobs WHERE job_type='automated' AND status='complete' AND finished_at>now()-interval '24 hours'
           AND jsonb_array_length(result)>0 GROUP BY result->0->>'route'
         ORDER BY avg_seconds,avg_risk
     SQL)->fetchAll();
+    foreach($automated as &$route){
+        $recent=$route['recent_risk'];$previous=$route['previous_risk'];$route['risk_change_percent']=null;
+        if($recent!==null&&$previous!==null){
+            $recent=(float)$recent;$previous=(float)$previous;
+            if($previous>0)$route['risk_change_percent']=100*($recent-$previous)/$previous;
+            elseif($recent===0.0)$route['risk_change_percent']=0.0;
+        }
+    }
+    unset($route);
     $automationProfile=$settings->get('automation_profile','balanced');
     usort($automated,static fn(array $a,array $b):int=>$automationProfile==='reliability'
         ? [(float)$a['avg_risk'],(float)$a['avg_seconds']]<=>[(float)$b['avg_risk'],(float)$b['avg_seconds']]
