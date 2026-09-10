@@ -65,6 +65,7 @@ function recordMetrics(PDO $pdo,string $root):void{
     $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes,cpu_metric_version) VALUES (?,?,?,?,?,2)');
     $save->execute([round($host,2),round($app,2),$totalDisk,$freeDisk,$appBytes]);
     $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
+    $pdo->exec("DELETE FROM google_api_requests WHERE requested_at < now() - interval '90 days'");
 }
 
 if($metricsDue)recordMetrics($pdo,$root);

@@ -72,6 +72,13 @@ ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET DEFAULT 2;
 ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET NOT NULL;
 CREATE INDEX IF NOT EXISTS system_metrics_time_idx ON system_metrics(recorded_at DESC);
 
+CREATE TABLE IF NOT EXISTS google_api_requests (
+    id BIGSERIAL PRIMARY KEY,
+    service TEXT NOT NULL CHECK (service IN ('directions','static_map')),
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS google_api_requests_time_idx ON google_api_requests(requested_at DESC);
+
 CREATE TABLE IF NOT EXISTS segments (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE CHECK (name ~ '^[a-z0-9]+_to_[a-z0-9]+$'),

@@ -25,8 +25,10 @@ final class Collector
         $insert = $this->pdo->prepare(
             'INSERT INTO measurements (segment_id,duration_seconds,duration_in_traffic_seconds,distance_meters,raw_payload) VALUES (?,?,?,?,?::jsonb)'
         );
+        $recordRequest = $this->pdo->prepare("INSERT INTO google_api_requests(service) VALUES ('directions')");
         $results = [];
         foreach ($segments as $segment) {
+            $recordRequest->execute();
             $response = $client->get('/maps/api/directions/json', ['query' => [
                 'origin' => $segment['origin'], 'destination' => $segment['destination'],
                 'mode' => $segment['travel_mode'], 'departure_time' => time(), 'key' => $key,
