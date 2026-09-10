@@ -35,6 +35,7 @@ The script installs and validates dependencies as well as installing the app its
 - PostgreSQL server and client
 - Nginx
 - cron
+- logrotate
 
 During installation, setup asks which Nginx port CannonMiner should use. Press
 Enter to accept port `3636`. CannonMiner is installed as an independent Nginx

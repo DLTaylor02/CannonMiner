@@ -5,6 +5,12 @@ server {
     root "{{PROJECT_ROOT}}/public";
     index index.php;
     client_max_body_size 2m;
+    set $cannonminer_loggable 1;
+    if ($request_uri ~ "^/analysis/[0-9a-f-]+/status") {
+        set $cannonminer_loggable 0;
+    }
+    access_log /var/log/cannonminer/nginx-access.log combined if=$cannonminer_loggable;
+    error_log /var/log/cannonminer/nginx-error.log warn;
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;

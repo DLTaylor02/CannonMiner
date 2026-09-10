@@ -31,14 +31,29 @@ Inspect the isolated runtime services with:
 ```bash
 systemctl status cannonminer-worker.service
 systemctl status php$(php -r 'echo PHP_MAJOR_VERSION,".",PHP_MINOR_VERSION;')-fpm.service
-journalctl -u cannonminer-worker.service
+sudo tail -n 100 /var/log/cannonminer/worker.log
 ```
 
-PHP-FPM errors for this application are written to
-`/var/log/cannonminer/php-error.log`. Collector output remains in
-`/var/www/cannonminer/var/collector.log`; automated calculation and telemetry
-output is written to `/var/www/cannonminer/var/automation.log`. Run
+All application-specific logs are stored under `/var/log/cannonminer`:
+
+- `nginx-access.log` and `nginx-error.log`: CannonMiner's Nginx virtual host
+- `php-error.log`: CannonMiner's dedicated PHP-FPM pool
+- `collector.log`: successful collections and collection failures
+- `automation.log`: queued automation batches and automation failures
+- `worker.log`: analysis-worker failures
+
+Routine scheduled checks that have no work to perform are silent, and the
+one-second analysis progress poll is omitted from Nginx access logging. Logs
+rotate daily, retain 14 rotations, and compress older rotations. PostgreSQL
+remains a shared service and retains its system-level logging rather than
+duplicating it under CannonMiner. Run
 `composer automate` to enqueue an automation batch and record a telemetry
 sample immediately. Scheduled dashboard telemetry is collected every 15
 minutes by default and has its own superadmin setting, independent of the route
 automation schedule.
+
+Dashboard CannonMiner storage includes the deployed application tree, every
+file and rotated archive under `/var/log/cannonminer`, the dedicated session
+directory, and the complete PostgreSQL database size reported by
+`pg_database_size`. Shared operating-system and PostgreSQL service logs remain
+part of "Other system" usage.

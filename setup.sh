@@ -26,6 +26,7 @@ LEGACY_CRON_TMP=""
 FILTERED_CRON_TMP=""
 FPM_POOL_TMP=""
 WORKER_SERVICE_TMP=""
+LOGROTATE_TMP=""
 
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 info() { printf '\n==> %s\n' "$*"; }
@@ -36,6 +37,7 @@ cleanup() {
   [ -z "$FILTERED_CRON_TMP" ] || rm -f "$FILTERED_CRON_TMP"
   [ -z "$FPM_POOL_TMP" ] || rm -f "$FPM_POOL_TMP"
   [ -z "$WORKER_SERVICE_TMP" ] || rm -f "$WORKER_SERVICE_TMP"
+  [ -z "$LOGROTATE_TMP" ] || rm -f "$LOGROTATE_TMP"
 }
 as_user() {
   local target="$1"
@@ -70,7 +72,7 @@ case "$DEPLOY_DIR" in /|/var|/var/www) fail "Refusing to use broad installation 
 [[ "$APP_DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || fail "CANNONMINER_DB_NAME must be a valid PostgreSQL identifier."
 [[ "$APP_DB_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || fail "CANNONMINER_DB_USER must be a valid PostgreSQL identifier."
 
-[ -r /etc/os-release ] || fail "Cannot identify this OS. Install PHP 8.2+, PostgreSQL, Composer, Nginx, and cron manually."
+[ -r /etc/os-release ] || fail "Cannot identify this OS. Install PHP 8.2+, PostgreSQL, Composer, Nginx, cron, and logrotate manually."
 # shellcheck disable=SC1091
 . /etc/os-release
 case "${ID:-}" in
@@ -88,7 +90,7 @@ trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
 if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
-  PACKAGES=(php-cli php-fpm php-pgsql php-mbstring php-xml php-curl composer postgresql postgresql-contrib nginx cron curl unzip openssl rsync ca-certificates)
+  PACKAGES=(php-cli php-fpm php-pgsql php-mbstring php-xml php-curl composer postgresql postgresql-contrib nginx cron logrotate curl unzip openssl rsync ca-certificates)
   MISSING_PACKAGES=()
   for PACKAGE in "${PACKAGES[@]}"; do
     dpkg-query -W -f='${Status}' "$PACKAGE" 2>/dev/null | grep -q 'install ok installed' || MISSING_PACKAGES+=("$PACKAGE")
@@ -172,11 +174,41 @@ systemctl list-unit-files "$PHP_FPM_SERVICE" --no-legend 2>/dev/null | grep -q "
 $SUDO systemctl enable --now "$PHP_FPM_SERVICE"
 SESSION_DIR="/var/lib/cannonminer/sessions"
 FPM_SOCKET="/run/php/cannonminer.sock"
+LOG_DIR="/var/log/cannonminer"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0700 "$SESSION_DIR"
-$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 /var/log/cannonminer
-$SUDO touch /var/log/cannonminer/php-error.log
-$SUDO chown "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" /var/log/cannonminer/php-error.log
-$SUDO chmod 0640 /var/log/cannonminer/php-error.log
+$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$LOG_DIR"
+for LOG_FILE in php-error.log nginx-access.log nginx-error.log collector.log automation.log worker.log; do
+  $SUDO touch "$LOG_DIR/$LOG_FILE"
+  $SUDO chown "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$LOG_DIR/$LOG_FILE"
+  $SUDO chmod 0640 "$LOG_DIR/$LOG_FILE"
+done
+for LOG_NAME in collector automation; do
+  LEGACY_LOG="$ROOT_DIR/var/$LOG_NAME.log"
+  if [ -f "$LEGACY_LOG" ]; then
+    if [ -s "$LEGACY_LOG" ]; then
+      printf '[%s] Migrated records from %s\n' "$(date --iso-8601=seconds)" "$LEGACY_LOG" >> "$LOG_DIR/$LOG_NAME.log"
+      $SUDO cat "$LEGACY_LOG" >> "$LOG_DIR/$LOG_NAME.log"
+    fi
+    $SUDO rm -f "$LEGACY_LOG"
+  fi
+done
+LOGROTATE_TMP="$(mktemp)"
+cat > "$LOGROTATE_TMP" <<LOGROTATE
+$LOG_DIR/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su $APP_SYSTEM_USER $APP_SYSTEM_USER
+}
+LOGROTATE
+$SUDO install -m 0644 "$LOGROTATE_TMP" /etc/logrotate.d/cannonminer
+rm -f "$LOGROTATE_TMP"
+LOGROTATE_TMP=""
+$SUDO logrotate --debug /etc/logrotate.d/cannonminer >/dev/null 2>&1 || fail "logrotate rejected the CannonMiner policy."
 $SUDO rm -f /etc/php/*/fpm/conf.d/99-cannonminer.ini /etc/php/*/cli/conf.d/99-cannonminer.ini
 $SUDO rm -f /etc/php/*/fpm/pool.d/cannonminer.conf
 FPM_POOL_TMP="$(mktemp)"
@@ -322,6 +354,8 @@ WorkingDirectory=$ROOT_DIR
 ExecStart=$(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 "$ROOT_DIR/bin/analyze-worker.php"
 Restart=always
 RestartSec=3
+StandardOutput=append:$LOG_DIR/worker.log
+StandardError=append:$LOG_DIR/worker.log
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
@@ -340,8 +374,6 @@ $SUDO systemctl restart cannonminer-worker.service
 
 info "Installing scheduled collector"
   mkdir -p "$ROOT_DIR/var"
-  touch "$ROOT_DIR/var/collector.log"
-  touch "$ROOT_DIR/var/automation.log"
 as_user "$INSTALL_USER" composer licenses --format=json --no-dev > "$ROOT_DIR/var/composer-licenses.json"
 $SUDO chown -R "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$ROOT_DIR/var"
 $SUDO chmod 0750 "$ROOT_DIR/var"
@@ -357,8 +389,8 @@ if as_user "$INSTALL_USER" crontab -l > "$LEGACY_CRON_TMP" 2>/dev/null; then
   fi
 fi
 {
-  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$ROOT_DIR/var/collector.log' 2>&1"
-  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/automate.php --scheduled >> '$ROOT_DIR/var/automation.log' 2>&1"
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$LOG_DIR/collector.log' 2>&1"
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/automate.php --scheduled >> '$LOG_DIR/automation.log' 2>&1"
 } > "$CRON_TMP"
 $SUDO install -m 0644 "$CRON_TMP" /etc/cron.d/cannonminer
 

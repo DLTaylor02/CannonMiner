@@ -12,7 +12,7 @@ $settings = new Settings($pdo);
 $scheduled = in_array('--scheduled', $argv, true);
 
 if (!(bool) $pdo->query("SELECT pg_try_advisory_lock(hashtext('cannonminer.collector'))")->fetchColumn()) {
-    echo "Another collection is already running.\n";
+    if (!$scheduled) echo "Another collection is already running.\n";
     exit(0);
 }
 
@@ -21,7 +21,6 @@ if ($scheduled) {
     $statement = $pdo->prepare("SELECT started_at > now() - (? * interval '1 minute') FROM collection_runs WHERE status='success' ORDER BY started_at DESC LIMIT 1");
     $statement->execute([$interval]);
     if ((bool) $statement->fetchColumn()) {
-        echo "Collection is not due.\n";
         exit(0);
     }
 }
@@ -31,10 +30,10 @@ try {
     $collected = (new Collector($pdo, $settings))->collectAll();
     $statement = $pdo->prepare("UPDATE collection_runs SET status='success',finished_at=now(),segments_collected=? WHERE id=?");
     $statement->execute([count($collected), $run]);
-    echo 'Collected ' . count($collected) . " segments: " . implode(', ', $collected) . "\n";
+    echo '[' . date(DATE_ATOM) . '] Collected ' . count($collected) . " segments: " . implode(', ', $collected) . "\n";
 } catch (Throwable $error) {
     $statement = $pdo->prepare("UPDATE collection_runs SET status='failed',finished_at=now(),message=? WHERE id=?");
     $statement->execute([substr($error->getMessage(), 0, 2000), $run]);
-    fwrite(STDERR, $error->getMessage() . "\n");
+    fwrite(STDERR, '[' . date(DATE_ATOM) . '] ERROR: ' . $error->getMessage() . "\n");
     exit(1);
 }

@@ -28,6 +28,7 @@ function cpuSnapshot():array{
     return['idle'=>($values[3]??0)+($values[4]??0),'total'=>array_sum($values)];
 }
 function directoryBytes(string $path):int{
+    if(!is_dir($path)||!is_readable($path))return 0;
     $bytes=0;$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path,FilesystemIterator::SKIP_DOTS));
     foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
 }
@@ -35,7 +36,9 @@ function recordMetrics(PDO $pdo,string $root):void{
     $before=cpuSnapshot();usleep(250000);$after=cpuSnapshot();$total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
     $host=max(0,min(100,100*(1-$idle/$total)));$output=(string)shell_exec("ps -u cannonminer -o %cpu= 2>/dev/null");$app=0.0;
     foreach(preg_split('/\s+/',trim($output))?:[] as $value)if(is_numeric($value))$app+=(float)$value;
-    $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);$appBytes=directoryBytes($root);
+    $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);
+    $databaseBytes=(int)$pdo->query('SELECT pg_database_size(current_database())')->fetchColumn();
+    $appBytes=$databaseBytes+directoryBytes($root)+directoryBytes('/var/log/cannonminer')+directoryBytes('/var/lib/cannonminer/sessions');
     $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes) VALUES (?,?,?,?,?)');
     $save->execute([round($host,2),round($app,2),$totalDisk,$freeDisk,$appBytes]);
     $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
@@ -44,7 +47,7 @@ function recordMetrics(PDO $pdo,string $root):void{
 if($metricsDue)recordMetrics($pdo,$root);
 if(!$automationDue)exit(0);
 if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
-    fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);
+    if(!$scheduled)fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);
 }
 $router=new Router($pdo,$settings);$routes=$router->routeOptions();
 $userId=$pdo->query("SELECT id FROM users WHERE role='superadmin' LIMIT 1")->fetchColumn();
@@ -56,4 +59,4 @@ foreach($routes as $route){
     $input=['start'=>$route['start'],'end'=>$route['end'],'speed'=>$speed,'profile'=>$profile,'risk'=>$risk,'segments'=>$route['segments']];
     $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR)]);
 }
-printf("Queued %d automated route calculations.\n",count($routes));
+printf("[%s] Queued %d automated route calculations.\n",date(DATE_ATOM),count($routes));

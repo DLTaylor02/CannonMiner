@@ -28,6 +28,7 @@ register_shutdown_function(static function () use ($pdo, &$currentId, &$finished
     $message = $fatal ? 'PHP worker stopped: ' . $fatal['message'] : 'Analysis worker stopped unexpectedly.';
     $statement = $pdo->prepare("UPDATE analysis_jobs SET status='failed',stage='Failed',error=?,updated_at=now(),finished_at=now() WHERE id=? AND status='running'");
     $statement->execute([substr($message, 0, 2000), $currentId]);
+    fwrite(STDERR, sprintf("[%s] Job %s failed: %s\n", date(DATE_ATOM), $currentId, $message));
 });
 
 while (true) {
@@ -72,6 +73,7 @@ while (true) {
     } catch (Throwable $error) {
         $failed = $pdo->prepare("UPDATE analysis_jobs SET status='failed',stage='Failed',error=?,updated_at=now(),finished_at=now() WHERE id=?");
         $failed->execute([substr($error->getMessage(), 0, 2000), $currentId]);
+        fwrite(STDERR, sprintf("[%s] Job %s failed: %s\n", date(DATE_ATOM), $currentId, $error->getMessage()));
     }
 
     $finished = true;
