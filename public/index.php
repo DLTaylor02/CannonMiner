@@ -141,18 +141,18 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
 
 $app->map(['GET','POST'], '/plan', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
     $nodes = $router->nodes(); $input = ['start'=>'redball','end'=>'portofino','speed'=>(float)$settings->get('default_speed_mph','110'),
-        'profile'=>'balanced','risk'=>(float)$settings->get('default_max_delay_risk','.20')];
+        'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];
     $routes=$router->routeOptions();$results = []; $error = null;
     if ($request->getMethod() === 'POST') {
         $input = array_merge($input, (array)$request->getParsedBody());
-        if($identity['role']==='user')$input['risk']=(float)$settings->get('default_max_delay_risk','.20');
+        if($identity['role']==='user')$input['risk']=100*(float)$settings->get('default_max_delay_risk','.20');
         $token=(string)($input['_token']??'');if(!hash_equals($_SESSION['csrf']??'',$token))throw new RuntimeException('Your session expired.');
         $jobType=($input['_mode']??'best')==='custom'?'custom':'best';$segments=null;
         if($jobType==='custom'){$selected=$routes[(int)($input['route_index']??-1)]??null;if(!$selected){$error='Select an available custom route.';}else{$input['start']=$selected['start'];$input['end']=$selected['end'];$segments=$selected['segments'];}}
         if($error)return $render($request,$response,'dashboard.twig',['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
         $id=bin2hex(random_bytes(16));
         $statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?,'queued',?::jsonb,?)");
-        $payload=['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>(float)$input['risk']];if($segments!==null)$payload['segments']=$segments;
+        $payload=['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>max(0,min(1,(float)$input['risk']/100))];if($segments!==null)$payload['segments']=$segments;
         $statement->execute([$id,$_SESSION['user_id'],json_encode($payload,JSON_THROW_ON_ERROR),$jobType]);
         return $response->withHeader('Location','/analysis/'.$id)->withStatus(302);
     }
@@ -238,6 +238,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         $allowed=['default_max_delay_risk'];
         if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_hours','automation_start_minute','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
+        $body['default_max_delay_risk']=(string)(max(0,min(100,(float)($body['default_max_delay_risk']??20)))/100);
         if($identity['role']==='superadmin'){
             $body['collection_interval_minutes']=(string)max(5,min(10080,(int)($body['collection_interval_minutes']??60)));
             $body['departure_interval_minutes']=(string)max(5,min(60,(int)($body['departure_interval_minutes']??15)));
@@ -250,7 +251,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             $body['automation_start_minute']=(string)max(0,min(59,(int)($body['automation_start_minute']??0)));
             $body['automation_speed_mph']=(string)max(1,min(250,(float)($body['automation_speed_mph']??110)));
             if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
-            $body['automation_max_risk']=(string)max(0,min(1,(float)($body['automation_max_risk']??.20)));
+            $body['automation_max_risk']=(string)(max(0,min(100,(float)($body['automation_max_risk']??20)))/100);
             $body['telemetry_interval_minutes']=(string)max(1,min(1440,(int)($body['telemetry_interval_minutes']??15)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);

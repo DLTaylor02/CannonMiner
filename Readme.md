@@ -99,7 +99,7 @@ Each route and departure-time combination is evaluated using:
 - Seasonal and weekday traffic patterns
 - Simulated delay outcomes based on the collected delay distribution
 - The probability of a meaningful slowdown on any segment or across the complete route
-Options exceeding the selected maximum delay risk are excluded when possible. Balanced and Fastest then favor the lowest expected travel time, with delay risk used as a tie-breaker. Reliability favors the lowest delay risk first, with expected travel time used as a tie-breaker.
+Options exceeding the selected maximum delay risk are excluded when possible. Maximum-risk fields in the WebUI are entered as percentages from `0` to `100`; for example, enter `43` for 43%. Balanced and Fastest then favor the lowest expected travel time, with delay risk used as a tie-breaker. Reliability favors the lowest delay risk first, with expected travel time used as a tie-breaker.
 The three highest-ranked combinations are displayed. If no option satisfies the maximum-risk setting, CannonMiner displays the best available alternatives instead of returning no result.
 
 ## Layout
