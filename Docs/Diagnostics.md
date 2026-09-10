@@ -52,6 +52,11 @@ sample immediately. Scheduled dashboard telemetry is collected every 15
 minutes by default and has its own superadmin setting, independent of the route
 automation schedule.
 
+Host and CannonMiner CPU are sampled over the same 250 ms interval and use the
+same whole-system `0-100%` scale. CannonMiner CPU sums process ticks for the
+dedicated system account, so the green line represents the portion of the red
+host line attributable to CannonMiner rather than a per-core process average.
+
 Dashboard CannonMiner storage includes the deployed application tree, every
 file and rotated archive under `/var/log/cannonminer`, the dedicated session
 directory, and the complete PostgreSQL database size reported by

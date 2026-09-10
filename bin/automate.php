@@ -27,15 +27,36 @@ function cpuSnapshot():array{
     $fields=preg_split('/\s+/',trim((string)file('/proc/stat')[0]));array_shift($fields);$values=array_map('intval',$fields);
     return['idle'=>($values[3]??0)+($values[4]??0),'total'=>array_sum($values)];
 }
+function currentUid():int{
+    $status=(string)file_get_contents('/proc/self/status');
+    if(!preg_match('/^Uid:\s+(\d+)/m',$status,$match))throw new RuntimeException('Unable to determine the telemetry process UID.');
+    return(int)$match[1];
+}
+function userCpuSnapshot(int $uid):array{
+    $snapshot=[];
+    foreach(glob('/proc/[0-9]*/stat')?:[] as $statPath){
+        $pid=basename(dirname($statPath));$status=@file_get_contents(dirname($statPath).'/status');
+        if($status===false||!preg_match('/^Uid:\s+(\d+)/m',$status,$match)||(int)$match[1]!==$uid)continue;
+        $stat=@file_get_contents($statPath);$close=$stat===false?false:strrpos($stat,')');
+        if($close===false)continue;$fields=preg_split('/\s+/',trim(substr($stat,$close+1)));
+        if(count($fields)<13)continue;$snapshot[$pid]=(int)$fields[11]+(int)$fields[12];
+    }
+    return$snapshot;
+}
+function userCpuDelta(array $before,array $after):int{
+    $ticks=0;
+    foreach($after as $pid=>$value)if(isset($before[$pid]))$ticks+=max(0,$value-$before[$pid]);
+    return$ticks;
+}
 function directoryBytes(string $path):int{
     if(!is_dir($path)||!is_readable($path))return 0;
     $bytes=0;$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path,FilesystemIterator::SKIP_DOTS));
     foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
 }
 function recordMetrics(PDO $pdo,string $root):void{
-    $before=cpuSnapshot();usleep(250000);$after=cpuSnapshot();$total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
-    $host=max(0,min(100,100*(1-$idle/$total)));$output=(string)shell_exec("ps -u cannonminer -o %cpu= 2>/dev/null");$app=0.0;
-    foreach(preg_split('/\s+/',trim($output))?:[] as $value)if(is_numeric($value))$app+=(float)$value;
+    $uid=currentUid();$before=cpuSnapshot();$appBefore=userCpuSnapshot($uid);usleep(250000);$appAfter=userCpuSnapshot($uid);$after=cpuSnapshot();
+    $total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
+    $host=max(0,min(100,100*(1-$idle/$total)));$app=max(0,min($host,100*userCpuDelta($appBefore,$appAfter)/$total));
     $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);
     $databaseBytes=(int)$pdo->query('SELECT pg_database_size(current_database())')->fetchColumn();
     $appBytes=$databaseBytes+directoryBytes($root)+directoryBytes('/var/log/cannonminer')+directoryBytes('/var/lib/cannonminer/sessions');
