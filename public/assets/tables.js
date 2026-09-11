@@ -25,8 +25,6 @@
         const label = document.createElement('span');
         label.className = 'mobile-table-label';
         label.textContent = headings[index] || 'Details';
-        const sort = headerCells[index]?.querySelector('.sort-arrow');
-        if (sort) label.append(' ', sort.cloneNode(true));
         cell.prepend(label);
       });
     });

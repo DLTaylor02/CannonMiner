@@ -273,9 +273,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC,id DESC",'run'=>"created_at {$sqlDirection},id {$sqlDirection}",'matches'=>"matches {$sqlDirection},created_at DESC,id DESC",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC,id DESC"};
     $historySql=$historyCte;
     $historySql.=<<<SQL
-        SELECT history.*,(count(*) FILTER (WHERE status='complete') OVER (
-          ORDER BY {$order} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ))::int AS rank FROM grouped_history history
+        SELECT history.* FROM grouped_history history
         ORDER BY {$order}
         LIMIT {$pageSize} OFFSET {$offset}
     SQL;
