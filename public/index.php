@@ -223,6 +223,51 @@ $app->get('/analysis/{id}/status',function(Request $request,Response $response,a
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return $response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
+$app->get('/calendar',function(Request $request,Response $response)use($pdo,$settings,$render):Response{
+    $speeds=array_map('floatval',array_column($pdo->query(<<<'SQL'
+        SELECT DISTINCT round((result->0->>'target_speed_mph')::numeric,1)::float AS speed
+        FROM analysis_jobs
+        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+          AND result->0->>'target_speed_mph' IS NOT NULL
+        ORDER BY speed
+    SQL)->fetchAll(),'speed'));
+    if($speeds===[])$speeds=[round((float)$settings->get('automation_speed_mph','110'),1)];
+    $requestedSpeed=round((float)($request->getQueryParams()['speed']??$settings->get('automation_speed_mph','110')),1);
+    $selectedSpeed=$speeds[0];foreach($speeds as $speed)if(abs($speed-$requestedSpeed)<.05){$selectedSpeed=$speed;break;}
+    $timezone=new DateTimeZone('America/New_York');$currentYear=(int)(new DateTimeImmutable('now',$timezone))->format('Y');
+    $years=array_map('intval',array_column($pdo->query(<<<'SQL'
+        SELECT DISTINCT extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
+        FROM analysis_jobs
+        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+          AND result->0->>'departure' IS NOT NULL ORDER BY year DESC
+    SQL)->fetchAll(),'year'));
+    if(!in_array($currentYear,$years,true))$years[]=$currentYear;rsort($years);
+    $requestedYear=(int)($request->getQueryParams()['year']??$currentYear);$selectedYear=in_array($requestedYear,$years,true)?$requestedYear:$currentYear;
+    $countsStatement=$pdo->prepare(<<<'SQL'
+        SELECT to_char(((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date,'YYYY-MM-DD') AS day,
+          count(*)::int AS calculations
+        FROM analysis_jobs
+        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+          AND result->0->>'departure' IS NOT NULL AND result->0->>'target_speed_mph' IS NOT NULL
+          AND extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
+          AND round((result->0->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
+        GROUP BY day ORDER BY day
+    SQL);
+    $countsStatement->execute([$selectedYear,$selectedSpeed]);$counts=[];
+    foreach($countsStatement->fetchAll() as $row)$counts[$row['day']]=(int)$row['calculations'];
+    $maximum=$counts?max($counts):0;$months=[];
+    for($month=1;$month<=12;$month++){
+        $start=new DateTimeImmutable(sprintf('%04d-%02d-01',$selectedYear,$month),$timezone);$days=[];
+        for($day=1,$limit=(int)$start->format('t');$day<=$limit;$day++){
+            $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;$color=null;$dark=false;
+            if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$color='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark];
+        }
+        $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
+    }
+    return $render($request,$response,'calendar.twig',['months'=>$months,'speeds'=>$speeds,'years'=>$years,'selected_speed'=>$selectedSpeed,'selected_year'=>$selectedYear,'maximum'=>$maximum,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
     $query=$request->getQueryParams();$filter=(string)($query['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
     $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run','matches'],true))$sort='risk';
