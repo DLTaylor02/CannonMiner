@@ -226,41 +226,58 @@ $app->get('/analysis/{id}/status',function(Request $request,Response $response,a
 
 $app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
     $query=$request->getQueryParams();$filter=(string)($query['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
-    $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run'],true))$sort='risk';
-    $direction=(string)($query['dir']??($sort==='run'?'desc':'asc'));if(!in_array($direction,['asc','desc'],true))$direction=$sort==='run'?'desc':'asc';
+    $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run','matches'],true))$sort='risk';
+    $descendingDefault=in_array($sort,['run','matches'],true);
+    $direction=(string)($query['dir']??($descendingDefault?'desc':'asc'));if(!in_array($direction,['asc','desc'],true))$direction=$descendingDefault?'desc':'asc';
     $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id ORDER BY u.username')->fetchAll();
     $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
     $conditions=[];$parameters=[];
     if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
     if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
     $where=$conditions?' WHERE '.implode(' AND ',$conditions):'';
-    $pageSize=50;
-    $countStatement=$pdo->prepare("SELECT count(*) FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}");
-    $countStatement->execute($parameters);$totalRuns=(int)$countStatement->fetchColumn();
-    $totalPages=max(1,(int)ceil($totalRuns/$pageSize));$page=max(1,min($totalPages,(int)($query['page']??1)));$offset=($page-1)*$pageSize;
-    $sqlDirection=strtoupper($direction);
-    $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC,id DESC",'run'=>"created_at {$sqlDirection},id {$sqlDirection}",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC,id DESC"};
-    $statement=$pdo->prepare(<<<SQL
-        SELECT history.*,(count(*) FILTER (WHERE status='complete') OVER (
-          ORDER BY {$order} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ))::int AS rank FROM (
-          SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,
-            j.input->>'start' AS start_node,j.input->>'end' AS end_node,j.input->>'profile' AS profile,
+    $historyCte=<<<SQL
+        WITH history_source AS (
+          SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,j.input->>'profile' AS profile,
+            j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 AS comparable,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'target_speed_mph')::float END AS target_speed_mph,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN j.result->0->>'route' END AS route,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN (j.result->0->>'departure') END AS departure,
+              THEN j.result->0->>'departure' END AS departure,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'risk')::float END AS risk,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN (j.result->0->>'expected_seconds')::float END AS expected_seconds
           FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}
-        ) history
+        ), grouped_history AS (
+          SELECT (array_agg(id ORDER BY created_at DESC,id DESC))[1] AS id,
+            (array_agg(username ORDER BY created_at DESC,id DESC))[1] AS username,
+            (array_agg(status ORDER BY created_at DESC,id DESC))[1] AS status,
+            (array_agg(stage ORDER BY created_at DESC,id DESC))[1] AS stage,
+            (array_agg(job_type ORDER BY created_at DESC,id DESC))[1] AS job_type,
+            max(created_at) AS created_at,profile,target_speed_mph,route,departure,risk,expected_seconds,
+            count(*)::int AS matches
+          FROM history_source
+          GROUP BY profile,target_speed_mph,route,departure,risk,expected_seconds,
+            CASE WHEN comparable THEN NULL ELSE id END
+        )
+    SQL;
+    $pageSize=50;
+    $countStatement=$pdo->prepare($historyCte.' SELECT count(*) FROM grouped_history');
+    $countStatement->execute($parameters);$totalRuns=(int)$countStatement->fetchColumn();
+    $totalPages=max(1,(int)ceil($totalRuns/$pageSize));$page=max(1,min($totalPages,(int)($query['page']??1)));$offset=($page-1)*$pageSize;
+    $sqlDirection=strtoupper($direction);
+    $order=match($sort){'expected'=>"(status='complete') DESC,expected_seconds {$sqlDirection} NULLS LAST,risk ASC NULLS LAST,created_at DESC,id DESC",'run'=>"created_at {$sqlDirection},id {$sqlDirection}",'matches'=>"matches {$sqlDirection},created_at DESC,id DESC",'risk'=>"(status='complete') DESC,risk {$sqlDirection} NULLS LAST,expected_seconds ASC NULLS LAST,created_at DESC,id DESC"};
+    $historySql=$historyCte;
+    $historySql.=<<<SQL
+        SELECT history.*,(count(*) FILTER (WHERE status='complete') OVER (
+          ORDER BY {$order} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ))::int AS rank FROM grouped_history history
         ORDER BY {$order}
         LIMIT {$pageSize} OFFSET {$offset}
-    SQL);$statement->execute($parameters);$runs=$statement->fetchAll();
+    SQL;
+    $statement=$pdo->prepare($historySql);$statement->execute($parameters);$runs=$statement->fetchAll();
     return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'direction'=>$direction,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
