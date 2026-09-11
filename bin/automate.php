@@ -88,8 +88,12 @@ if(!$userId)throw new RuntimeException('The automation job requires a superadmin
 $insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?, 'queued',?::jsonb,'automated')");
 $speed=max(1,min(250,(float)$settings->get('automation_speed_mph','110')));$profile=(string)$settings->get('automation_profile','balanced');
 if(!in_array($profile,['balanced','fastest','reliability'],true))$profile='balanced';$risk=max(0,min(1,(float)$settings->get('automation_max_risk','.20')));
-foreach($routes as $route){
-    $input=['start'=>$route['start'],'end'=>$route['end'],'speed'=>$speed,'profile'=>$profile,'risk'=>$risk,'segments'=>$route['segments']];
-    $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR)]);
-}
+$pdo->beginTransaction();
+try{
+    foreach($routes as $route){
+        $input=['start'=>$route['start'],'end'=>$route['end'],'speed'=>$speed,'profile'=>$profile,'risk'=>$risk,'segments'=>$route['segments']];
+        $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR)]);
+    }
+    $pdo->commit();
+}catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw$error;}
 printf("[%s] Queued %d automated route calculations.\n",date(DATE_ATOM),count($routes));

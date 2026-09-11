@@ -55,6 +55,7 @@ ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAUL
 ALTER TABLE analysis_jobs DROP CONSTRAINT IF EXISTS analysis_jobs_job_type_check;
 ALTER TABLE analysis_jobs ADD CONSTRAINT analysis_jobs_job_type_check CHECK (job_type IN ('best','custom','automated'));
 CREATE INDEX IF NOT EXISTS analysis_jobs_user_time_idx ON analysis_jobs(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS analysis_jobs_queue_idx ON analysis_jobs(created_at,id) WHERE status='queued';
 
 CREATE TABLE IF NOT EXISTS system_metrics (
     id BIGSERIAL PRIMARY KEY,

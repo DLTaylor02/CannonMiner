@@ -67,3 +67,7 @@ directory, and the complete PostgreSQL database size reported by
 `pg_database_size`. Shared operating-system and PostgreSQL service logs remain
 part of "Other system" usage. Storage is sampled every four hours, six times per
 day, independently of the configurable CPU telemetry interval.
+
+The analysis worker processes queued manual and automated calculations in
+creation order. An automated batch is inserted in one database transaction, so
+it joins the existing queue as a unit and cannot interrupt a running job.

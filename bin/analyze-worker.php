@@ -37,7 +37,7 @@ while (true) {
         SELECT id,input
         FROM analysis_jobs
         WHERE status='queued'
-        ORDER BY (job_type='automated'),created_at
+        ORDER BY created_at,id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     SQL)->fetch();
