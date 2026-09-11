@@ -350,7 +350,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if ($request->getMethod() === 'POST') {
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_hours','automation_start_minute','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
         $body['default_max_delay_risk']=(string)(max(0,min(100,(float)($body['default_max_delay_risk']??20)))/100);
         if($identity['role']==='superadmin'){
@@ -361,8 +361,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             $body['password_min_length']=(string)max(8,min(64,(int)($body['password_min_length']??12)));
             if(!in_array($body['password_min_strength']??'',['strong','very_strong'],true))$body['password_min_strength']='strong';
             $body['automation_enabled']=isset($body['automation_enabled'])?'yes':'no';
-            $body['automation_interval_hours']=(string)max(1,min(168,(int)($body['automation_interval_hours']??1)));
-            $body['automation_start_minute']=(string)max(0,min(59,(int)($body['automation_start_minute']??0)));
+            $body['automation_interval_minutes']=(string)max(5,min(10080,(int)($body['automation_interval_minutes']??60)));
             $body['automation_speed_mph']=(string)max(1,min(250,(float)($body['automation_speed_mph']??110)));
             if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
             $body['automation_max_risk']=(string)(max(0,min(100,(float)($body['automation_max_risk']??20)))/100);
@@ -376,7 +375,9 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         SELECT *,to_char(coalesce(finished_at,started_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_at_iso
         FROM collection_runs ORDER BY started_at DESC LIMIT 1
     SQL)->fetch();
-    $values=$settings->all(); $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
+    $values=$settings->all();
+    if(!isset($values['automation_interval_minutes']))$values['automation_interval_minutes']=(string)(max(1,min(168,(int)($values['automation_interval_hours']??1)))*60);
+    $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($requireAdmin)->add($guard);
 

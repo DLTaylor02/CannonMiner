@@ -15,6 +15,11 @@ A manual collection ignores the interval:
 composer collect
 ```
 
+Automated route calculations use a separate interval configured in minutes by
+the superadmin. The next batch becomes due after that interval has elapsed from
+the creation of the previous automated batch. Cron checks once per minute, and
+the automation lock prevents overlapping batches.
+
 Collection requires a Google Maps API key and explicit confirmation in Settings
 that the operator's Google agreement permits persistent traffic-data storage.
 Enable both the Directions API and Maps Static API for that Google Cloud project.

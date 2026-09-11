@@ -10,16 +10,16 @@ use CannonMiner\Settings;
 $root=dirname(__DIR__);$pdo=Database::connect($root);$settings=new Settings($pdo);
 if(!(bool)$pdo->query("SELECT pg_try_advisory_lock(hashtext('cannonminer.automation'))")->fetchColumn())exit(0);
 $scheduled=in_array('--scheduled',$argv,true);
-$interval=max(1,min(168,(int)$settings->get('automation_interval_hours','1')));
-$minute=max(0,min(59,(int)$settings->get('automation_start_minute','0')));
+$legacyHours=max(1,min(168,(int)$settings->get('automation_interval_hours','1')));
+$interval=max(5,min(10080,(int)$settings->get('automation_interval_minutes',(string)($legacyHours*60))));
 $telemetryInterval=max(1,min(1440,(int)$settings->get('telemetry_interval_minutes','15')));
 $metricsDue=true;$automationDue=true;
 if($scheduled){
     $latestMetric=$pdo->query('SELECT max(recorded_at) FROM system_metrics')->fetchColumn();
     $metricsDue=!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60+60;
     $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
-    $automationDue=$settings->get('automation_enabled','yes')==='yes'&&(int)date('i')===$minute
-        &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*3600+60);
+    $automationDue=$settings->get('automation_enabled','yes')==='yes'
+        &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*60);
     if(!$metricsDue&&!$automationDue)exit(0);
 }
 

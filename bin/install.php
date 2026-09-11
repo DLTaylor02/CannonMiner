@@ -28,6 +28,14 @@ $root = dirname(__DIR__);
 $pdo = Database::connect($root);
 echo "Preparing database schema...\n";
 $pdo->exec((string) file_get_contents($root . '/database/schema.sql'));
+$pdo->exec(<<<'SQL'
+    INSERT INTO settings(key,value)
+    SELECT 'automation_interval_minutes',
+      LEAST(10080,GREATEST(5,CASE WHEN value ~ '^[0-9]+$' THEN value::int*60 ELSE 60 END))::text
+    FROM settings WHERE key='automation_interval_hours'
+    ON CONFLICT(key) DO NOTHING;
+    DELETE FROM settings WHERE key IN ('automation_interval_hours','automation_start_minute');
+SQL);
 $pdo->exec((string) file_get_contents($root . '/database/seed.sql'));
 $pdo->exec((string) file_get_contents($root . '/database/import_legacy.sql'));
 

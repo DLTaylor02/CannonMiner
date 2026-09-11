@@ -4,7 +4,7 @@ INSERT INTO settings (key, value) VALUES
 ('collection_interval_minutes', '60'), ('google_data_storage_authorized', 'no'),
 ('login_rate_limit', '5'), ('login_lockout_minutes', '15'),
 ('password_min_strength', 'strong'), ('password_min_length', '12'),
-('automation_enabled', 'yes'), ('automation_interval_hours', '1'), ('automation_start_minute', '0'),
+('automation_enabled', 'yes'), ('automation_interval_minutes', '60'),
 ('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
 ('telemetry_interval_minutes', '15')
 ON CONFLICT (key) DO NOTHING;

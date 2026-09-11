@@ -8,8 +8,7 @@
 <fieldset class="settings-group"><legend>Automation</legend><div class="settings-grid">
 <label>Dashboard telemetry interval <span>minutes</span><input type="number" min="1" max="1440" name="telemetry_interval_minutes" value="{{ settings.telemetry_interval_minutes }}"></label>
 <label class="check"><input type="checkbox" name="automation_enabled" value="yes" {{ settings.automation_enabled=='yes'?'checked':'' }}><span>Run automated route calculations</span></label>
-<label>Run every <span>hours</span><input type="number" min="1" max="168" name="automation_interval_hours" value="{{ settings.automation_interval_hours }}"></label>
-<label>Start at minute <span>0-59 within the scheduled hour</span><input type="number" min="0" max="59" name="automation_start_minute" value="{{ settings.automation_start_minute }}"></label>
+<label>Automation interval <span>minutes after the previous batch</span><input type="number" min="5" max="10080" name="automation_interval_minutes" value="{{ settings.automation_interval_minutes }}"></label>
 <label>Automation target speed <span>mph</span><input type="number" min="1" max="250" name="automation_speed_mph" value="{{ settings.automation_speed_mph }}"></label>
 <label>Automation strategy<select name="automation_profile"><option value="balanced" {{ settings.automation_profile=='balanced'?'selected':'' }}>Balanced</option><option value="fastest" {{ settings.automation_profile=='fastest'?'selected':'' }}>Fastest</option><option value="reliability" {{ settings.automation_profile=='reliability'?'selected':'' }}>Reliability</option></select></label>
 <label>Automation maximum risk <span>percent</span><input type="number" min="0" max="100" step="1" name="automation_max_risk" value="{{ settings.automation_max_risk*100 }}"></label>
