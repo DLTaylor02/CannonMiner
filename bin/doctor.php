@@ -32,7 +32,7 @@ try {
     exit(1);
 }
 
-$tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','system_metrics','google_api_requests'];
+$tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','system_metrics','storage_metrics','google_api_requests'];
 foreach ($tables as $table) {
     $statement = $pdo->prepare("SELECT to_regclass(?) IS NOT NULL");
     $statement->execute(['public.' . $table]);

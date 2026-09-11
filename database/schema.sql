@@ -67,10 +67,30 @@ CREATE TABLE IF NOT EXISTS system_metrics (
     cpu_metric_version SMALLINT NOT NULL DEFAULT 2
 );
 ALTER TABLE system_metrics ADD COLUMN IF NOT EXISTS cpu_metric_version SMALLINT;
+ALTER TABLE system_metrics ALTER COLUMN disk_total_bytes DROP NOT NULL;
+ALTER TABLE system_metrics ALTER COLUMN disk_free_bytes DROP NOT NULL;
+ALTER TABLE system_metrics ALTER COLUMN app_bytes DROP NOT NULL;
 UPDATE system_metrics SET cpu_metric_version=1 WHERE cpu_metric_version IS NULL;
 ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET DEFAULT 2;
 ALTER TABLE system_metrics ALTER COLUMN cpu_metric_version SET NOT NULL;
 CREATE INDEX IF NOT EXISTS system_metrics_time_idx ON system_metrics(recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS storage_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    disk_total_bytes BIGINT NOT NULL,
+    disk_free_bytes BIGINT NOT NULL,
+    app_bytes BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS storage_metrics_time_idx ON storage_metrics(recorded_at DESC);
+INSERT INTO storage_metrics(recorded_at,disk_total_bytes,disk_free_bytes,app_bytes)
+SELECT recorded_at,disk_total_bytes,disk_free_bytes,app_bytes FROM (
+    SELECT DISTINCT ON ((extract(epoch FROM recorded_at)::bigint/14400))
+      recorded_at,disk_total_bytes,disk_free_bytes,app_bytes
+    FROM system_metrics WHERE disk_total_bytes IS NOT NULL
+    ORDER BY (extract(epoch FROM recorded_at)::bigint/14400),recorded_at DESC
+) legacy_storage
+WHERE NOT EXISTS (SELECT 1 FROM storage_metrics);
 
 CREATE TABLE IF NOT EXISTS google_api_requests (
     id BIGSERIAL PRIMARY KEY,

@@ -14,13 +14,16 @@ $legacyHours=max(1,min(168,(int)$settings->get('automation_interval_hours','1'))
 $interval=max(5,min(10080,(int)$settings->get('automation_interval_minutes',(string)($legacyHours*60))));
 $telemetryInterval=max(1,min(1440,(int)$settings->get('telemetry_interval_minutes','15')));
 $metricsDue=true;$automationDue=true;
+$latestStorage=$pdo->query('SELECT max(recorded_at) FROM storage_metrics')->fetchColumn();
+$storageDue=!$latestStorage||strtotime((string)$latestStorage)<=time()-4*3600;
 if($scheduled){
     $latestMetric=$pdo->query('SELECT max(recorded_at) FROM system_metrics')->fetchColumn();
-    $metricsDue=!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60+60;
+    $automationRunning=(bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status='running')")->fetchColumn();
+    $metricsDue=$automationRunning||!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60;
     $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
     $automationDue=$settings->get('automation_enabled','yes')==='yes'
         &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*60);
-    if(!$metricsDue&&!$automationDue)exit(0);
+    if(!$metricsDue&&!$storageDue&&!$automationDue)exit(0);
 }
 
 function cpuSnapshot():array{
@@ -55,20 +58,26 @@ function directoryBytes(string $path):int{
     $bytes=0;$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path,FilesystemIterator::SKIP_DOTS));
     foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
 }
-function recordMetrics(PDO $pdo,string $root):void{
+function recordCpuMetric(PDO $pdo):void{
     $uid=cannonMinerUid();$before=cpuSnapshot();$appBefore=userCpuSnapshot($uid);usleep(250000);$appAfter=userCpuSnapshot($uid);$after=cpuSnapshot();
     $total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
     $host=max(0,min(100,100*(1-$idle/$total)));$app=max(0,min($host,100*userCpuDelta($appBefore,$appAfter)/$total));
+    $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,cpu_metric_version) VALUES (?,?,2)');
+    $save->execute([round($host,2),round($app,2)]);
+    $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
+}
+function recordStorageMetric(PDO $pdo,string $root):void{
     $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);
     $databaseBytes=(int)$pdo->query('SELECT pg_database_size(current_database())')->fetchColumn();
     $appBytes=$databaseBytes+directoryBytes($root)+directoryBytes('/var/log/cannonminer')+directoryBytes('/var/lib/cannonminer/sessions');
-    $save=$pdo->prepare('INSERT INTO system_metrics(host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes,cpu_metric_version) VALUES (?,?,?,?,?,2)');
-    $save->execute([round($host,2),round($app,2),$totalDisk,$freeDisk,$appBytes]);
-    $pdo->exec("DELETE FROM system_metrics WHERE recorded_at < now() - interval '90 days'");
+    $save=$pdo->prepare('INSERT INTO storage_metrics(disk_total_bytes,disk_free_bytes,app_bytes) VALUES (?,?,?)');
+    $save->execute([$totalDisk,$freeDisk,$appBytes]);
+    $pdo->exec("DELETE FROM storage_metrics WHERE recorded_at < now() - interval '90 days'");
     $pdo->exec("DELETE FROM google_api_requests WHERE requested_at < now() - interval '90 days'");
 }
 
-if($metricsDue)recordMetrics($pdo,$root);
+if($metricsDue)recordCpuMetric($pdo);
+if($storageDue)recordStorageMetric($pdo,$root);
 if(!$automationDue)exit(0);
 if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
     if(!$scheduled)fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);

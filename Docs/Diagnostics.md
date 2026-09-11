@@ -47,10 +47,12 @@ one-second analysis progress poll is omitted from Nginx access logging. Logs
 rotate daily, retain 14 rotations, and compress older rotations. PostgreSQL
 remains a shared service and retains its system-level logging rather than
 duplicating it under CannonMiner. Run
-`composer automate` to enqueue an automation batch and record a telemetry
-sample immediately. Scheduled dashboard telemetry is collected every 15
-minutes by default and has its own superadmin setting, independent of the route
-automation schedule.
+`composer automate` to enqueue an automation batch and record a CPU telemetry
+sample immediately. Scheduled CPU telemetry is collected every 15 minutes by
+default and has its own superadmin setting, independent of the route automation
+schedule. While an automated calculation is actively running, an additional
+CPU sample is collected on each once-per-minute scheduler check so short-lived
+calculation load is not hidden between regular samples.
 
 Host and CannonMiner CPU are sampled over the same 250 ms interval and use the
 same whole-system `0-100%` scale. CannonMiner CPU sums process ticks for the
@@ -63,4 +65,5 @@ Dashboard CannonMiner storage includes the deployed application tree, every
 file and rotated archive under `/var/log/cannonminer`, the dedicated session
 directory, and the complete PostgreSQL database size reported by
 `pg_database_size`. Shared operating-system and PostgreSQL service logs remain
-part of "Other system" usage.
+part of "Other system" usage. Storage is sampled every four hours, six times per
+day, independently of the configurable CPU telemetry interval.

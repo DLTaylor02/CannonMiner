@@ -135,7 +135,8 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         ? [(float)$a['avg_risk'],(float)$a['avg_seconds']]<=>[(float)$b['avg_risk'],(float)$b['avg_seconds']]
         : [(float)$a['avg_seconds'],(float)$a['avg_risk']]<=>[(float)$b['avg_seconds'],(float)$b['avg_risk']]);
     $automated=array_slice($automated,0,5);
-    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent,disk_total_bytes,disk_free_bytes,app_bytes FROM system_metrics WHERE cpu_metric_version=2 ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
+    $metrics=array_reverse($pdo->query("SELECT recorded_at,host_cpu_percent,app_cpu_percent FROM system_metrics WHERE cpu_metric_version=2 ORDER BY recorded_at DESC LIMIT 672")->fetchAll());
+    $storageMetrics=array_reverse($pdo->query("SELECT recorded_at,disk_total_bytes,disk_free_bytes,app_bytes FROM storage_metrics ORDER BY recorded_at DESC LIMIT 540")->fetchAll());
     $apiActual=$pdo->query(<<<'SQL'
         WITH tracking AS (
           SELECT min(requested_at) FILTER (WHERE service='directions') AS directions_started
@@ -170,7 +171,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $apiUsage=['actual'=>$apiActual,'forecast_per_hour'=>round($directionsPerHour+$staticMapsPerHour,2),
         'forecast_end'=>(new DateTimeImmutable((string)$forecastEnd))->format(DATE_ATOM),
         'reconstructed_requests'=>(int)($apiActual[array_key_last($apiActual)]['reconstructed_requests']??0)];
-    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->map(['GET','POST'], '/plan', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
