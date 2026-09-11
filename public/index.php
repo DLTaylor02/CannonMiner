@@ -108,8 +108,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $summary=$pdo->query(<<<'SQL'
         SELECT count(*) FILTER (WHERE status='complete')::int AS completed,
           count(*) FILTER (WHERE created_at>now()-interval '24 hours')::int AS runs_24h,
-          min((result->0->>'risk')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS best_risk,
-          avg((result->0->>'expected_seconds')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS avg_seconds
+          min((result->0->>'risk')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS best_risk
         FROM analysis_jobs
     SQL)->fetch();
     $automated=$pdo->query(<<<'SQL'
