@@ -246,23 +246,28 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     $requestedYear=(int)($request->getQueryParams()['year']??$currentYear);$selectedYear=in_array($requestedYear,$years,true)?$requestedYear:$currentYear;
     $countsStatement=$pdo->prepare(<<<'SQL'
         SELECT to_char(((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date,'YYYY-MM-DD') AS day,
+          to_char((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York','HH24:MI') AS departure_time,
           count(*)::int AS calculations
         FROM analysis_jobs
         WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
           AND result->0->>'departure' IS NOT NULL AND result->0->>'target_speed_mph' IS NOT NULL
           AND extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
           AND round((result->0->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
-        GROUP BY day ORDER BY day
+        GROUP BY day,departure_time ORDER BY day,departure_time
     SQL);
-    $countsStatement->execute([$selectedYear,$selectedSpeed]);$counts=[];
-    foreach($countsStatement->fetchAll() as $row)$counts[$row['day']]=(int)$row['calculations'];
+    $countsStatement->execute([$selectedYear,$selectedSpeed]);$counts=[];$departures=[];
+    foreach($countsStatement->fetchAll() as $row){
+        $count=(int)$row['calculations'];$counts[$row['day']]=($counts[$row['day']]??0)+$count;
+        $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
+        $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$count];
+    }
     $maximum=$counts?max($counts):0;$months=[];
     for($month=1;$month<=12;$month++){
         $start=new DateTimeImmutable(sprintf('%04d-%02d-01',$selectedYear,$month),$timezone);$days=[];
         for($day=1,$limit=(int)$start->format('t');$day<=$limit;$day++){
             $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;$color=null;$dark=false;
             if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$color='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
-            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark];
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[]];
         }
         $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
     }
