@@ -240,15 +240,15 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
           SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,j.input->>'profile' AS profile,
             j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 AS comparable,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN (j.result->0->>'target_speed_mph')::float END AS target_speed_mph,
+              THEN round(((j.result->0->>'target_speed_mph')::numeric)*10)::int END AS target_speed_tenths,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
               THEN j.result->0->>'route' END AS route,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN j.result->0->>'departure' END AS departure,
+              THEN date_trunc('minute',(j.result->0->>'departure')::timestamptz) END AS departure_minute,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN (j.result->0->>'risk')::float END AS risk,
+              THEN round(((j.result->0->>'risk')::numeric)*1000)::int END AS risk_tenths,
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN (j.result->0->>'expected_seconds')::float END AS expected_seconds
+              THEN round(((j.result->0->>'expected_seconds')::numeric)/60)::int END AS expected_minutes
           FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}
         ), grouped_history AS (
           SELECT (array_agg(id ORDER BY created_at DESC,id DESC))[1] AS id,
@@ -256,10 +256,12 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
             (array_agg(status ORDER BY created_at DESC,id DESC))[1] AS status,
             (array_agg(stage ORDER BY created_at DESC,id DESC))[1] AS stage,
             (array_agg(job_type ORDER BY created_at DESC,id DESC))[1] AS job_type,
-            max(created_at) AS created_at,profile,target_speed_mph,route,departure,risk,expected_seconds,
+            max(created_at) AS created_at,profile,target_speed_tenths/10.0 AS target_speed_mph,route,
+            departure_minute AS departure,
+            risk_tenths/1000.0 AS risk,expected_minutes*60 AS expected_seconds,
             count(*)::int AS matches
           FROM history_source
-          GROUP BY profile,target_speed_mph,route,departure,risk,expected_seconds,
+          GROUP BY profile,target_speed_tenths,route,departure_minute,risk_tenths,expected_minutes,
             CASE WHEN comparable THEN NULL ELSE id END
         )
     SQL;
