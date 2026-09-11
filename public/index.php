@@ -283,9 +283,23 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $perPage=(string)($query['per_page']??'20');if(!in_array($perPage,['20','40','60','80','all'],true))$perPage='20';
     $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id ORDER BY u.username')->fetchAll();
     $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
+    $speeds=array_map('floatval',array_column($pdo->query(<<<'SQL'
+        SELECT DISTINCT round(((result->0->>'target_speed_mph')::numeric)*10)::int/10.0 AS speed
+        FROM analysis_jobs
+        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+          AND result->0->>'target_speed_mph' IS NOT NULL
+        ORDER BY speed
+    SQL)->fetchAll(),'speed'));
+    $selectedSpeed=(string)($query['speed']??'all');
+    if($selectedSpeed!=='all'){
+        $requestedSpeed=round((float)$selectedSpeed,1);
+        $matchingSpeed=null;foreach($speeds as $speed)if(abs($speed-$requestedSpeed)<.05){$matchingSpeed=$speed;break;}
+        $selectedSpeed=$matchingSpeed===null?'all':number_format($matchingSpeed,1,'.','');
+    }
     $conditions=[];$parameters=[];
     if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
     if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
+    if($selectedSpeed!=='all'){$conditions[]="round(((j.result->0->>'target_speed_mph')::numeric)*10)::int=?";$parameters[]=(int)round((float)$selectedSpeed*10);}
     $where=$conditions?' WHERE '.implode(' AND ',$conditions):'';
     $groupDiscriminator=$grouped?'CASE WHEN comparable THEN NULL ELSE id END':'id';
     $historyCte=<<<SQL
@@ -331,7 +345,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     SQL;
     if($pageSize!==null)$historySql.=" LIMIT {$pageSize} OFFSET {$offset}";
     $statement=$pdo->prepare($historySql);$statement->execute($parameters);$runs=$statement->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'sort'=>$sort,'direction'=>$direction,'grouped'=>$grouped,'per_page'=>$perPage,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'sort'=>$sort,'direction'=>$direction,'grouped'=>$grouped,'per_page'=>$perPage,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);
