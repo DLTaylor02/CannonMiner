@@ -20,7 +20,7 @@ if($scheduled){
     $latestMetric=$pdo->query('SELECT max(recorded_at) FROM system_metrics')->fetchColumn();
     $automationRunning=(bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='automated' AND status='running')")->fetchColumn();
     $metricsDue=$automationRunning||!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60;
-    $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated'")->fetchColumn();
+    $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE job_type='automated' AND calculation_method_version=".Router::METHOD_VERSION)->fetchColumn();
     $automationDue=$settings->get('automation_enabled','yes')==='yes'
         &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*60);
     if(!$metricsDue&&!$storageDue&&!$automationDue)exit(0);
@@ -85,14 +85,14 @@ if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE job_type='
 $router=new Router($pdo,$settings);$routes=$router->routeOptions();
 $userId=$pdo->query("SELECT id FROM users WHERE role='superadmin' LIMIT 1")->fetchColumn();
 if(!$userId)throw new RuntimeException('The automation job requires a superadmin account.');
-$insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?, 'queued',?::jsonb,'automated')");
+$insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type,calculation_method_version) VALUES (?,?, 'queued',?::jsonb,'automated',?)");
 $speed=max(1,min(250,(float)$settings->get('automation_speed_mph','110')));$profile=(string)$settings->get('automation_profile','balanced');
 if(!in_array($profile,['balanced','fastest','reliability'],true))$profile='balanced';$risk=max(0,min(1,(float)$settings->get('automation_max_risk','.20')));
 $pdo->beginTransaction();
 try{
     foreach($routes as $route){
         $input=['start'=>$route['start'],'end'=>$route['end'],'speed'=>$speed,'profile'=>$profile,'risk'=>$risk,'segments'=>$route['segments']];
-        $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR)]);
+        $insert->execute([bin2hex(random_bytes(16)),$userId,json_encode($input,JSON_THROW_ON_ERROR),Router::METHOD_VERSION]);
     }
     $pdo->commit();
 }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw$error;}

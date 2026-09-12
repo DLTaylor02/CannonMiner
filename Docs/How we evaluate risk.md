@@ -18,3 +18,13 @@ For example, if 205 of 1,024 simulated trips encounter a meaningful slowdown, th
 The configured maximum risk does **not** change this calculation. It filters the results: CannonMiner prefers options below that limit. If none qualify, it returns the best available options anyway.
 
 One important detail: under the **Reliability** strategy, routes are ranked by risk first and expected time second. Both **Balanced** and **Fastest** currently rank by expected time first and use risk only as the tie-breaker. So at present, Balanced and Fastest effectively behave the same.
+
+## Calculation method 2
+
+Current calculations require every segment to have direct observations from the same weekday and within approximately 90 minutes of the predicted segment arrival. Candidates with an unsupported segment are not evaluated, and their missing data is not replaced with the segment-wide average.
+
+CannonMiner retains a larger set of the strongest supported candidates. The first result is always the numerically best result for the selected strategy. Remaining results must be within 15 expected minutes of the winner and are chosen to expose competitive alternatives on different dates, routes, or departure windows instead of returning only nearly identical times.
+
+Selection confidence is calculated by repeatedly resampling the simulated outcomes of the retained candidates. It is the percentage of those trials in which a candidate wins. This measures recommendation stability; repeated automated jobs are not treated as independent evidence.
+
+Calculated runs record their calculation-method version. Aggregate pages display only the current version, while an older result remains available through its direct analysis URL.
