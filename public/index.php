@@ -261,13 +261,13 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
         $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
         $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$count];
     }
-    $maximum=$counts?max($counts):0;$months=[];
+    $maximum=$counts?max($counts):0;$months=[];$holidays=\CannonMiner\UsBankHolidays::forYear($selectedYear,$timezone);
     for($month=1;$month<=12;$month++){
         $start=new DateTimeImmutable(sprintf('%04d-%02d-01',$selectedYear,$month),$timezone);$days=[];
         for($day=1,$limit=(int)$start->format('t');$day<=$limit;$day++){
             $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;$color=null;$dark=false;
             if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$color='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
-            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[]];
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[],'holidays'=>$holidays[$date]??[]];
         }
         $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
     }
