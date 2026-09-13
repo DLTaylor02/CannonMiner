@@ -49,13 +49,13 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
-    calculation_method_version SMALLINT NOT NULL DEFAULT 2
+    calculation_method_version SMALLINT NOT NULL DEFAULT 3
 );
 ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT 'best';
 ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS calculation_method_version SMALLINT;
 UPDATE analysis_jobs SET calculation_method_version=1 WHERE calculation_method_version IS NULL;
-ALTER TABLE analysis_jobs ALTER COLUMN calculation_method_version SET DEFAULT 2;
+ALTER TABLE analysis_jobs ALTER COLUMN calculation_method_version SET DEFAULT 3;
 ALTER TABLE analysis_jobs ALTER COLUMN calculation_method_version SET NOT NULL;
 ALTER TABLE analysis_jobs DROP CONSTRAINT IF EXISTS analysis_jobs_job_type_check;
 ALTER TABLE analysis_jobs ADD CONSTRAINT analysis_jobs_job_type_check CHECK (job_type IN ('best','custom','automated'));

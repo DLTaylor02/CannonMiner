@@ -258,7 +258,10 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
         )
         SELECT to_char(((candidate->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date,'YYYY-MM-DD') AS day,
           to_char((candidate->>'departure')::timestamptz AT TIME ZONE 'America/New_York','HH24:MI') AS departure_time,
-          100*sum(coalesce((candidate->>'selection_confidence')::numeric,0)) AS support
+          100*sum(coalesce((candidate->>'selection_confidence')::numeric,0)*(1-coalesce((candidate->>'risk')::numeric,1))) AS support,
+          100*sum(coalesce((candidate->>'selection_confidence')::numeric,0)) AS confidence_support,
+          100*sum(coalesce((candidate->>'selection_confidence')::numeric,0)*coalesce((candidate->>'risk')::numeric,1))
+            /nullif(sum(coalesce((candidate->>'selection_confidence')::numeric,0)),0) AS weighted_risk
         FROM candidates
         WHERE extract(year FROM ((candidate->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
           AND round((candidate->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
@@ -268,7 +271,8 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     foreach($countsStatement->fetchAll() as $row){
         $count=(float)$row['support'];$counts[$row['day']]=($counts[$row['day']]??0)+$count;
         $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
-        $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$count];
+        $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$count,
+            'confidence'=>(float)$row['confidence_support'],'risk'=>$row['weighted_risk']===null?null:(float)$row['weighted_risk']];
     }
     $maximum=$counts?max($counts):0;$months=[];$holidays=\CannonMiner\UsBankHolidays::forYear($selectedYear,$timezone);
     for($month=1;$month<=12;$month++){
