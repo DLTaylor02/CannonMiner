@@ -6,24 +6,22 @@ For every route and departure time:
 
 1. We find historical traffic observations near that weekday and time, primarily within about 90 minutes.
 2. Samples from the same or adjacent months receive more weight.
-3. Current calculations require direct observations for every segment and do not replace missing time-specific data with the segment-wide history.
+3. Current calculations require direct observations for every segment. Sparse nearby observations are regularized with that segment's broader measured history; no fabricated segment measurements are introduced.
 4. We simulate the trip **1,024 times**, randomly drawing plausible delays for every segment.
 5. A simulation is considered risky when either:
    - Any segment has at least **2 minutes of delay**, or **5% of its normal duration**, whichever is greater.
    - Total route delay reaches at least **5 minutes**, or **2% of the target-speed driving time**, whichever is greater.
-6. The empirical risk is the percentage of simulations meeting either condition.
+6. The displayed risk is the percentage of simulations meeting either condition.
 
-The displayed score uses the upper bound of a one-sided 95% Wilson confidence interval based on the weakest-supported segment. This prevents a small set of nearby observations with no delay events from being reported as proof of exactly 0% risk. It adds uncertainty, not assumed traffic measurements, and approaches the simulated rate as observation coverage grows.
-
-For example, if 205 of 1,024 simulated trips encounter a meaningful slowdown, the empirical risk is approximately **20.0%**. The displayed conservative risk can be higher when the weakest segment has limited observations.
+For example, if 205 of 1,024 simulated trips encounter a meaningful slowdown, the displayed risk is approximately **20.0%**.
 
 The configured maximum risk does **not** change this calculation. It filters the results: CannonMiner prefers options below that limit. If none qualify, it returns the best available options anyway.
 
 One important detail: under the **Reliability** strategy, routes are ranked by risk first and expected time second. Both **Balanced** and **Fastest** currently rank by expected time first and use risk only as the tie-breaker. So at present, Balanced and Fastest effectively behave the same.
 
-## Calculation method 3
+## Calculation method 4
 
-Current calculations require every segment to have direct observations from the same weekday and within approximately 90 minutes of the predicted segment arrival. Candidates with an unsupported segment are not evaluated, and their missing data is not replaced with the segment-wide average.
+Current calculations require every segment to have direct observations from the same weekday and within approximately 90 minutes of the predicted segment arrival. Candidates with an unsupported segment are not evaluated. For supported candidates, nearby observations are blended with actual broader observations from the same segment so a small all-clear sample does not imply zero risk.
 
 CannonMiner retains a larger set of the strongest supported candidates. The first result is always the numerically best result for the selected strategy. Up to two remaining results must be within 15 expected minutes of the winner and are chosen to expose competitive alternatives on different dates, routes, or departure windows instead of returning only nearly identical times.
 

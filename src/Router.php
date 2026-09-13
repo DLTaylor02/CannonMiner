@@ -12,7 +12,7 @@ use RuntimeException;
 
 final class Router
 {
-    public const METHOD_VERSION = 3;
+    public const METHOD_VERSION = 4;
     private const METERS_PER_MILE = 1609.344;
     private const RISK_SIMULATIONS = 1024;
     private const CONFIDENCE_SIMULATIONS = 256;
@@ -148,7 +148,7 @@ final class Router
             $segments[$name]=['id'=>(int)$row['id'],'name'=>$name,'start'=>$row['start_node'],'end'=>$row['end_node'],
                 'origin'=>$row['origin'],'destination'=>$row['destination'],'global_mean'=>(float)$row['global_mean'],
                 'distance'=>(float)$row['distance'],'normal_duration'=>(float)$row['normal_duration'],
-                'polyline'=>$row['polyline']?:null,'buckets'=>[]];
+                'polyline'=>$row['polyline']?:null,'buckets'=>[],'all_delays'=>''];
         }
         if ($segments===[]) return [];
         $total=array_sum(array_map(static fn(array $row)=>(int)$row['sample_count'],$rows));$loaded=0;$started=microtime(true);$lastReportedAt=$started;
@@ -163,11 +163,17 @@ final class Router
             $delay=max(0.0,(float)$row['duration_in_traffic_seconds']-(float)$row['duration_seconds']);
             $key=(int)$at->format('n')*1000000+(int)$at->format('N')*10000+(int)$at->format('G')*60+(int)$at->format('i');
             $segments[$name]['buckets'][$key]=($segments[$name]['buckets'][$key]??'').pack('d',$delay);
+            $segments[$name]['all_delays'].=pack('d',$delay);
             $loaded++;
             if($loaded===$total||$loaded%5000===0||microtime(true)-$lastReportedAt>=10){$elapsed=microtime(true)-$started;$eta=$loaded?($elapsed/$loaded)*($total-$loaded):null;$progress($loaded,max(1,$total),'Loading traffic observations',$eta);$lastReportedAt=microtime(true);}
             $dateKey=$at->format('n-N');
             if (!isset($this->representativeDates[$dateKey]) || $at>$this->representativeDates[$dateKey]) $this->representativeDates[$dateKey]=$at;
         }
+        foreach ($segments as &$segment) {
+            $values=$this->unpackDoubles($segment['all_delays']);
+            $segment['delay_points']=$this->empiricalPoints($values);unset($segment['all_delays']);
+        }
+        unset($segment);
         return $segments;
     }
 
@@ -219,9 +225,9 @@ final class Router
             $weight=exp(-abs($delta)/45)*($monthGap<=1?1.0:.35);
             foreach($this->unpackDoubles($segment['buckets'][$key]) as $delay){$values[]=$delay;$weights[]=$weight;}
         }
-        $nearby=count($values);$share=$nearby>0?1.0:0.0;
-        $localMean=$nearby?$this->weightedMean($values,$weights):0.0;
-        $result=['mean'=>$localMean,
+        $nearby=count($values);$share=$nearby/($nearby+10.0);
+        $localMean=$nearby?$this->weightedMean($values,$weights):$segment['global_mean'];
+        $result=['mean'=>$share*$localMean+(1-$share)*$segment['global_mean'],
             'distance'=>$segment['distance'],'normal'=>$segment['normal_duration'],'nearby'=>$nearby,'share'=>$share,
             'local_points'=>$nearby?$this->empiricalPoints($values,$weights):[]];
         $this->predictionCache[$cacheKey]=$this->packPrediction($result);return$result;
@@ -242,23 +248,30 @@ final class Router
         $random=new Randomizer(new PcgOneseq128XslRr64($seed));
         $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);$segmentRisks=[];
         foreach($predictions as [$segment,$prediction,$seconds]){
-            $draws=[];$localMax=count($prediction['local_points'])-1;
-            for($i=0;$i<self::RISK_SIMULATIONS;$i++)$draws[$i]=$prediction['local_points'][$random->getInt(0,$localMax)];
+            $draws=[];$global=$segment['delay_points'];$globalMax=count($global)-1;
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++)$draws[$i]=$global[$random->getInt(0,$globalMax)];
+            $useLocal=[];$localCount=0;
+            for($i=0;$i<self::RISK_SIMULATIONS;$i++){
+                $useLocal[$i]=($random->getInt(0,1000000000)/1000000000)<$prediction['share'];if($useLocal[$i])$localCount++;
+            }
+            if($localCount){
+                $localMax=count($prediction['local_points'])-1;
+                for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($useLocal[$i])$draws[$i]=$prediction['local_points'][$random->getInt(0,$localMax)];
+            }
             $threshold=max(120.0,$prediction['normal']*.05);
             $segmentEvents=0;
             for($i=0;$i<self::RISK_SIMULATIONS;$i++){
                 $totals[$i]+=$draws[$i];
                 if($draws[$i]>=$threshold){$slow[$i]=true;$segmentEvents++;}
             }
-            $segmentRisk=$this->upperConfidenceRisk($segmentEvents/self::RISK_SIMULATIONS,$prediction['nearby']);
+            $segmentRisk=$segmentEvents/self::RISK_SIMULATIONS;
             $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk];
         }
         $material=max(300.0,$drive*.02);$events=0;
         $eventBytes='';for($i=0;$i<self::RISK_SIMULATIONS;$i++){if($slow[$i]||$totals[$i]>=$material){$events++;$eventBytes.="\1";}else$eventBytes.="\0";}
         $nodes=array_merge([$route[0]['start']],array_column($route,'end'));
-        $empiricalRisk=$events/self::RISK_SIMULATIONS;
         return ['route'=>implode(' -> ',$nodes),'departure'=>$departure,'drive_seconds'=>$drive,'congestion_seconds'=>$congestion,
-            'expected_seconds'=>$drive+$congestion,'risk'=>$this->upperConfidenceRisk($empiricalRisk,$minimumSupport),'empirical_risk'=>$empiricalRisk,'distance_miles'=>$distance/self::METERS_PER_MILE,
+            'expected_seconds'=>$drive+$congestion,'risk'=>$events/self::RISK_SIMULATIONS,'distance_miles'=>$distance/self::METERS_PER_MILE,
             'target_speed_mph'=>$mph,'observations'=>$support,'minimum_segment_observations'=>$minimumSupport,
             'segments'=>$route,'segment_risks'=>$segmentRisks,'_simulation_delays'=>pack('d*',...$totals),'_simulation_events'=>$eventBytes];
     }
@@ -299,7 +312,7 @@ final class Router
             foreach($pool as $index=>$item){
                 $delayTotal=0.0;$eventTotal=0;$maximum=count($delays[$index])-1;
                 for($sample=0;$sample<self::CONFIDENCE_SAMPLE_SIZE;$sample++){$pick=$random->getInt(0,$maximum);$delayTotal+=$delays[$index][$pick];$eventTotal+=ord($events[$index][$pick]);}
-                $candidate=['index'=>$index,'risk'=>$this->upperConfidenceRisk($eventTotal/self::CONFIDENCE_SAMPLE_SIZE,$item['minimum_segment_observations']),'expected_seconds'=>$item['drive_seconds']+$delayTotal/self::CONFIDENCE_SAMPLE_SIZE];
+                $candidate=['index'=>$index,'risk'=>$eventTotal/self::CONFIDENCE_SAMPLE_SIZE,'expected_seconds'=>$item['drive_seconds']+$delayTotal/self::CONFIDENCE_SAMPLE_SIZE];
                 $all[]=$candidate;if($candidate['risk']<=$maxRisk)$eligible[]=$candidate;
             }
             $candidates=$eligible?:$all;
@@ -330,15 +343,6 @@ final class Router
     {
         foreach($items as $item)if($item['route']===$candidate['route']&&$item['departure']==$candidate['departure'])return true;
         return false;
-    }
-
-    private function upperConfidenceRisk(float $observedRisk,int $observations): float
-    {
-        $observations=max(1,$observations);$z=1.6448536269515;$zSquared=$z*$z;
-        $denominator=1+$zSquared/$observations;
-        $center=($observedRisk+$zSquared/(2*$observations))/$denominator;
-        $margin=$z*sqrt(($observedRisk*(1-$observedRisk)/$observations)+$zSquared/(4*$observations*$observations))/$denominator;
-        return min(1.0,$center+$margin);
     }
 
     private function riskColor(float $risk): string
