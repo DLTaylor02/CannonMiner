@@ -9,13 +9,21 @@ const eastern=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekd
 const browserTime=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});document.querySelectorAll('.browser-time').forEach(item=>item.textContent=browserTime.format(new Date(item.dateTime)));
 const segmentName=name=>String(name).replace('_to_',' to ');
 const duration=seconds=>{const minutes=Math.round(Number(seconds)/60);return `${Math.floor(minutes/60)} hr ${String(minutes%60).padStart(2,'0')} min`};
+const segmentTimeFormatters=new Map();
+function segmentStart(segment){
+  if(!segment.start_time||!segment.start_timezone)return '-';
+  try{
+    if(!segmentTimeFormatters.has(segment.start_timezone))segmentTimeFormatters.set(segment.start_timezone,new Intl.DateTimeFormat('en-US',{timeZone:segment.start_timezone,weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
+    return `${segmentTimeFormatters.get(segment.start_timezone).format(new Date(segment.start_time))} ${segment.start_timezone_label||segment.start_timezone}`;
+  }catch{return '-'}
+}
 function mapMarkup(r,index){
   if(!r.map_available)return '<div class="map-unavailable">No stored route geometry is available yet. Run the collector once, then analyze again.</div>';
   return `<img class="route-map" alt="Traffic-colored route map" src="/analysis/${encodeURIComponent(id)}/map/${index}">`;
 }
 function riskMarkup(r){
-  const segments=(r.segment_risks||[]).map(s=>`<span><i style="--segment-color:#${esc(s.color)}"></i>${esc(segmentName(s.name))}: ${(s.risk*100).toFixed(1)}%</span>`).join('');
-  return `<div class="traffic-key"><span>Lower traffic likelihood</span><i class="traffic-scale"></i><span>Higher</span></div>${segments?`<div class="segment-risk">${segments}</div>`:''}`;
+  const segments=(r.segment_risks||[]).map(s=>`<tr><td data-label="Segment"><span class="segment-risk-name"><i style="--segment-color:#${esc(s.color)}"></i>${esc(segmentName(s.name))}</span></td><td data-label="Segment start">${esc(segmentStart(s))}</td><td data-label="Into run">${Number.isFinite(Number(s.start_offset_seconds))?duration(s.start_offset_seconds):'-'}</td><td data-label="Risk">${(s.risk*100).toFixed(1)}%</td></tr>`).join('');
+  return `<div class="traffic-key"><span>Lower traffic likelihood</span><i class="traffic-scale"></i><span>Higher</span></div>${segments?`<div class="segment-risk-table"><table><thead><tr><th>Segment</th><th>Segment start</th><th>Into run</th><th>Risk</th></tr></thead><tbody>${segments}</tbody></table></div>`:''}`;
 }
 function evidenceMarkup(r){if(!Number.isFinite(Number(r.confidence)))return `<div><strong>${r.observations}</strong><span>matching samples</span></div>`;return `<div><strong>${(r.confidence*100).toFixed(0)}%</strong><span>confidence</span></div><div><strong>${r.weakest_segment_observations}</strong><span>weakest segment samples</span></div>`}
 function render(items){document.querySelector('h1').textContent='Analysis complete';document.getElementById('progress').hidden=true;document.getElementById('results').innerHTML=items.map((r,i)=>`<article class="result"><div class="result-copy"><p class="rank">${i?'Alternative '+(i+1):'Recommended'}</p><h2>${esc(r.route)}</h2><p class="departure">Departure pattern: ${esc(eastern.format(new Date(r.departure)))} (New York time)</p><div class="metrics"><div><strong>${duration(r.expected_seconds)}</strong><span>expected time</span></div><div><strong>${Math.round(r.congestion_seconds/60)}m</strong><span>congestion</span></div><div><strong>${(r.risk*100).toFixed(1)}%</strong><span>delay risk</span></div>${evidenceMarkup(r)}<div><strong>${Number(r.target_speed_mph).toLocaleString(undefined,{maximumFractionDigits:1})} mph</strong><span>target avg speed</span></div><div><strong>${Math.round(r.distance_miles)}</strong><span>miles</span></div></div>${riskMarkup(r)}</div>${mapMarkup(r,i)}</article>`).join('')}

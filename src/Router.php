@@ -128,7 +128,7 @@ final class Router
     private function loadSegments(DateTimeZone $timezone,callable $progress): array
     {
         $rows = $this->pdo->query(<<<'SQL'
-            SELECT s.id,s.name,s.start_node,s.end_node,s.origin,s.destination,count(m.id)::int AS sample_count,
+            SELECT s.id,s.name,s.start_node,s.end_node,s.origin,s.destination,s.timezone,count(m.id)::int AS sample_count,
               avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))::float AS global_mean,
               percentile_cont(.5) WITHIN GROUP (ORDER BY m.distance_meters)::float AS distance,
               percentile_cont(.5) WITHIN GROUP (ORDER BY m.duration_seconds)::float AS normal_duration,
@@ -146,7 +146,7 @@ final class Router
         foreach ($rows as $row) {
             $name=(string)$row['name']; $byId[(int)$row['id']]=$name;
             $segments[$name]=['id'=>(int)$row['id'],'name'=>$name,'start'=>$row['start_node'],'end'=>$row['end_node'],
-                'origin'=>$row['origin'],'destination'=>$row['destination'],'global_mean'=>(float)$row['global_mean'],
+                'origin'=>$row['origin'],'destination'=>$row['destination'],'timezone'=>$row['timezone'],'global_mean'=>(float)$row['global_mean'],
                 'distance'=>(float)$row['distance'],'normal_duration'=>(float)$row['normal_duration'],
                 'polyline'=>$row['polyline']?:null,'buckets'=>[],'all_delays'=>''];
         }
@@ -246,15 +246,16 @@ final class Router
         foreach($route as $segment){
             $prediction=$this->prediction($segment,$arrival,$timezone,$departureInterval);$seconds=$prediction['distance']/($mph*self::METERS_PER_MILE/3600);
             if($prediction['direct_nearby']===0)return null;
+            $segmentStart=$arrival;$startOffset=max(0,$segmentStart->getTimestamp()-$departure->getTimestamp());
             $drive+=$seconds;$congestion+=$prediction['mean'];$distance+=$prediction['distance'];$support+=$prediction['nearby'];
             $weakestSupport=min($weakestSupport,$prediction['direct_nearby']);
-            $predictions[]=[$segment,$prediction,$seconds];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
+            $predictions[]=[$segment,$prediction,$seconds,$segmentStart,$startOffset];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
         }
         $seedMaterial=implode('|',array_column($route,'name')).'|'.$departure->format('Y-m-d\TH:i:sP');
         $seed=unpack('q',substr(hash('sha256',$seedMaterial,true),0,8))[1];
         $random=new Randomizer(new PcgOneseq128XslRr64($seed));
         $totals=array_fill(0,self::RISK_SIMULATIONS,0.0);$slow=array_fill(0,self::RISK_SIMULATIONS,false);$segmentRisks=[];
-        foreach($predictions as [$segment,$prediction,$seconds]){
+        foreach($predictions as [$segment,$prediction,$seconds,$segmentStart,$startOffset]){
             $draws=[];$global=$segment['delay_points'];$globalMax=count($global)-1;
             for($i=0;$i<self::RISK_SIMULATIONS;$i++)$draws[$i]=$global[$random->getInt(0,$globalMax)];
             $useLocal=[];$localCount=0;
@@ -272,7 +273,10 @@ final class Router
                 if($draws[$i]>=$threshold){$slow[$i]=true;$segmentEvents++;}
             }
             $segmentRisk=$segmentEvents/self::RISK_SIMULATIONS;
-            $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk];
+            $segmentRisks[]=['name'=>$segment['name'],'risk'=>$segmentRisk,'start_time'=>$segmentStart->format(DATE_ATOM),
+                'start_timezone'=>$segment['timezone'],
+                'start_timezone_label'=>$segmentStart->setTimezone(new DateTimeZone($segment['timezone']))->format('T'),
+                'start_offset_seconds'=>$startOffset];
         }
         $material=max(300.0,$drive*.02);$events=0;
         for($i=0;$i<self::RISK_SIMULATIONS;$i++)if($slow[$i]||$totals[$i]>=$material)$events++;

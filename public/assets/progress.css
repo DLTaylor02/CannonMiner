@@ -5,6 +5,17 @@
 .map-unavailable { min-height:330px; display:grid; place-items:center; padding:32px; background:var(--paper); color:var(--muted); text-align:center; }
 .traffic-key { display:flex; align-items:center; gap:8px; margin-top:18px; color:var(--muted); font-size:12px; }
 .traffic-scale { width:120px; height:8px; background:linear-gradient(90deg,#159447,#f0b429,#c62828); }
-.segment-risk { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:12px; }
-.segment-risk span { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
-.segment-risk i { width:10px; height:10px; display:inline-block; background:var(--segment-color); }
+.segment-risk-table { margin-top:12px; border:1px solid var(--line); overflow:auto; }
+.segment-risk-table table { min-width:500px; }
+.segment-risk-table th,.segment-risk-table td { padding:9px 10px; font-size:12px; }
+.segment-risk-table tbody tr:last-child td { border-bottom:0; }
+.segment-risk-name { display:inline-flex; align-items:center; gap:7px; }
+.segment-risk-name i { width:10px; height:10px; flex:0 0 10px; display:inline-block; background:var(--segment-color); }
+@media(max-width:600px){
+  .segment-risk-table { overflow:visible; border:0; }
+  .segment-risk-table table,.segment-risk-table tbody { display:block; min-width:0; }
+  .segment-risk-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .segment-risk-table tr { display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--line); margin-top:8px; background:var(--white); }
+  .segment-risk-table td { display:grid; gap:2px; border-bottom:0; }
+  .segment-risk-table td::before { content:attr(data-label); color:var(--muted); font-size:9px; font-weight:750; text-transform:uppercase; }
+}
