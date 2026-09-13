@@ -17,4 +17,8 @@ For example, if 205 of 1,024 simulated trips encounter a meaningful slowdown, th
 
 The configured maximum risk does **not** change this calculation. It filters the results: CannonMiner prefers options below that limit. If none qualify, it returns the best available options anyway.
 
+Before this risk calculation runs, the current calculation method requires direct observations for every segment from the same weekday, the same or an adjacent month, and the relevant time window. Unsupported candidates are excluded rather than estimated. This eligibility rule and the separately displayed confidence value do not modify the risk formula.
+
+Confidence measures evidence quality rather than danger. CannonMiner bootstraps the existing simulation outcomes to estimate how often a candidate remains in the top three, then combines that stability with the direct observation count for the least-supported segment. Calendar points use `confidence x (1 - risk)`.
+
 One important detail: under the **Reliability** strategy, routes are ranked by risk first and expected time second. Both **Balanced** and **Fastest** currently rank by expected time first and use risk only as the tie-breaker. So at present, Balanced and Fastest effectively behave the same.

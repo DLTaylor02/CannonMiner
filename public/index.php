@@ -109,7 +109,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         SELECT count(*) FILTER (WHERE status='complete')::int AS completed,
           count(*) FILTER (WHERE created_at>now()-interval '24 hours')::int AS runs_24h,
           min((result->0->>'risk')::float) FILTER (WHERE status='complete' AND jsonb_array_length(result)>0) AS best_risk
-        FROM analysis_jobs
+        FROM analysis_jobs WHERE calculation_method_version=2
     SQL)->fetch();
     $automated=$pdo->query(<<<'SQL'
         SELECT result->0->>'route' AS route,avg((result->0->>'risk')::float) AS avg_risk,
@@ -117,7 +117,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
           avg((result->0->>'risk')::float) FILTER (WHERE finished_at>now()-interval '12 hours') AS recent_risk,
           avg((result->0->>'risk')::float) FILTER (WHERE finished_at<=now()-interval '12 hours') AS previous_risk,
           (array_agg(id ORDER BY finished_at DESC))[1] AS latest_id
-        FROM analysis_jobs WHERE job_type='automated' AND status='complete' AND finished_at>now()-interval '24 hours'
+        FROM analysis_jobs WHERE calculation_method_version=2 AND job_type='automated' AND status='complete' AND finished_at>now()-interval '24 hours'
           AND jsonb_array_length(result)>0 GROUP BY result->0->>'route'
         ORDER BY avg_seconds,avg_risk
     SQL)->fetchAll();
@@ -186,7 +186,7 @@ $app->map(['GET','POST'], '/plan', function (Request $request, Response $respons
         if($jobType==='custom'){$selected=$routes[(int)($input['route_index']??-1)]??null;if(!$selected){$error='Select an available custom route.';}else{$input['start']=$selected['start'];$input['end']=$selected['end'];$segments=$selected['segments'];}}
         if($error)return $render($request,$response,'dashboard.twig',['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
         $id=bin2hex(random_bytes(16));
-        $statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type) VALUES (?,?,'queued',?::jsonb,?)");
+        $statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type,calculation_method_version) VALUES (?,?,'queued',?::jsonb,?,2)");
         $payload=['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>max(0,min(1,(float)$input['risk']/100))];if($segments!==null)$payload['segments']=$segments;
         $statement->execute([$id,$_SESSION['user_id'],json_encode($payload,JSON_THROW_ON_ERROR),$jobType]);
         return $response->withHeader('Location','/analysis/'.$id)->withStatus(302);
@@ -228,7 +228,7 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     $speeds=array_map('floatval',array_column($pdo->query(<<<'SQL'
         SELECT DISTINCT round((result->0->>'target_speed_mph')::numeric,1)::float AS speed
         FROM analysis_jobs
-        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+        WHERE calculation_method_version=2 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
           AND result->0->>'target_speed_mph' IS NOT NULL
         ORDER BY speed
     SQL)->fetchAll(),'speed'));
@@ -239,27 +239,38 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     $years=array_map('intval',array_column($pdo->query(<<<'SQL'
         SELECT DISTINCT extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
         FROM analysis_jobs
-        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+        WHERE calculation_method_version=2 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
           AND result->0->>'departure' IS NOT NULL ORDER BY year DESC
     SQL)->fetchAll(),'year'));
     if(!in_array($currentYear,$years,true))$years[]=$currentYear;rsort($years);
     $requestedYear=(int)($request->getQueryParams()['year']??$currentYear);$selectedYear=in_array($requestedYear,$years,true)?$requestedYear:$currentYear;
     $countsStatement=$pdo->prepare(<<<'SQL'
-        SELECT to_char(((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date,'YYYY-MM-DD') AS day,
-          to_char((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York','HH24:MI') AS departure_time,
-          count(*)::int AS calculations
-        FROM analysis_jobs
-        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
-          AND result->0->>'departure' IS NOT NULL AND result->0->>'target_speed_mph' IS NOT NULL
-          AND extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
-          AND round((result->0->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
+        WITH latest_equivalent AS (
+          SELECT DISTINCT ON (job_type,input) result
+          FROM analysis_jobs
+          WHERE calculation_method_version=2 AND status='complete'
+            AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+          ORDER BY job_type,input,finished_at DESC,id DESC
+        ), recommendations AS (
+          SELECT item
+          FROM latest_equivalent CROSS JOIN LATERAL jsonb_array_elements(result) AS item
+        )
+        SELECT to_char(((item->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date,'YYYY-MM-DD') AS day,
+          to_char((item->>'departure')::timestamptz AT TIME ZONE 'America/New_York','HH24:MI') AS departure_time,
+          count(*)::int AS recommendations,
+          sum(coalesce((item->>'confidence')::numeric,0)*(1-(item->>'risk')::numeric))::float AS points
+        FROM recommendations
+        WHERE item->>'departure' IS NOT NULL AND item->>'target_speed_mph' IS NOT NULL
+          AND extract(year FROM ((item->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
+          AND round((item->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
         GROUP BY day,departure_time ORDER BY day,departure_time
     SQL);
-    $countsStatement->execute([$selectedYear,$selectedSpeed]);$counts=[];$departures=[];
+    $countsStatement->execute([$selectedYear,$selectedSpeed]);$counts=[];$recommendationCounts=[];$departures=[];
     foreach($countsStatement->fetchAll() as $row){
-        $count=(int)$row['calculations'];$counts[$row['day']]=($counts[$row['day']]??0)+$count;
+        $points=(float)$row['points'];$recommendations=(int)$row['recommendations'];$counts[$row['day']]=($counts[$row['day']]??0)+$points;
+        $recommendationCounts[$row['day']]=($recommendationCounts[$row['day']]??0)+$recommendations;
         $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
-        $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$count];
+        $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$recommendations,'points'=>$points];
     }
     $maximum=$counts?max($counts):0;$months=[];$holidays=\CannonMiner\UsBankHolidays::forYear($selectedYear,$timezone);
     for($month=1;$month<=12;$month++){
@@ -267,7 +278,7 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
         for($day=1,$limit=(int)$start->format('t');$day<=$limit;$day++){
             $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;$color=null;$dark=false;
             if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$color='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
-            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[],'holidays'=>$holidays[$date]??[]];
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'recommendations'=>$recommendationCounts[$date]??0,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[],'holidays'=>$holidays[$date]??[]];
         }
         $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
     }
@@ -281,12 +292,12 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $direction=(string)($query['dir']??($descendingDefault?'desc':'asc'));if(!in_array($direction,['asc','desc'],true))$direction=$descendingDefault?'desc':'asc';
     $grouped=(string)($query['grouped']??'1')!=='0';
     $perPage=(string)($query['per_page']??'20');if(!in_array($perPage,['20','40','60','80','all'],true))$perPage='20';
-    $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id ORDER BY u.username')->fetchAll();
+    $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id WHERE j.calculation_method_version=2 ORDER BY u.username')->fetchAll();
     $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
     $speeds=array_map('floatval',array_column($pdo->query(<<<'SQL'
         SELECT DISTINCT round(((result->0->>'target_speed_mph')::numeric)*10)::int/10.0 AS speed
         FROM analysis_jobs
-        WHERE status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
+        WHERE calculation_method_version=2 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
           AND result->0->>'target_speed_mph' IS NOT NULL
         ORDER BY speed
     SQL)->fetchAll(),'speed'));
@@ -296,7 +307,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
         $matchingSpeed=null;foreach($speeds as $speed)if(abs($speed-$requestedSpeed)<.05){$matchingSpeed=$speed;break;}
         $selectedSpeed=$matchingSpeed===null?'all':number_format($matchingSpeed,1,'.','');
     }
-    $conditions=[];$parameters=[];
+    $conditions=['j.calculation_method_version=2'];$parameters=[];
     if($filter!=='all'){$conditions[]='j.job_type=?';$parameters[]=$filter;}
     if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}
     if($selectedSpeed!=='all'){$conditions[]="round(((j.result->0->>'target_speed_mph')::numeric)*10)::int=?";$parameters[]=(int)round((float)$selectedSpeed*10);}

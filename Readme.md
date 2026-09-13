@@ -80,7 +80,7 @@ composer reset-superadmin-password
 
 ## Route selection
 
-CannonMiner finds the available routes between the selected starting point and destination. For each route, it tests departure times throughout every weekday and month represented in the collected traffic data, using 15-minute intervals by default.
+CannonMiner finds the available routes between the selected starting point and destination. For each route, it considers every month and weekday combination at 15-minute intervals by default. A candidate is scored only when every segment has direct observations from the same weekday, the same or an adjacent month, and the relevant time window. CannonMiner never fills an unsupported segment with an assumed value.
 Each route and departure-time combination is evaluated using:
 - Distance and the selected target average speed
 - Typical historical delay for each segment
@@ -89,4 +89,8 @@ Each route and departure-time combination is evaluated using:
 - Simulated delay outcomes based on the collected delay distribution
 - The probability of a meaningful slowdown on any segment or across the complete route
 Options exceeding the selected maximum delay risk are excluded when possible. Maximum-risk fields in the WebUI are entered as percentages from `0` to `100`; for example, enter `43` for 43%. Balanced and Fastest then favor the lowest expected travel time, with delay risk used as a tie-breaker. Reliability favors the lowest delay risk first, with expected travel time used as a tie-breaker.
-The three highest-ranked combinations are displayed. If no option satisfies the maximum-risk setting, CannonMiner displays the best available alternatives instead of returning no result.
+Exactly three supported combinations are displayed. The first is the highest-ranked option. The remaining choices favor a different day, route, or meaningfully different departure window while preserving the normal ranking order. If no option satisfies the maximum-risk setting, CannonMiner displays the best available supported alternatives instead of returning no result.
+
+Confidence is separate from risk. CannonMiner repeatedly resamples the existing simulation outcomes to measure how often a candidate remains in the top three, then tempers that stability by the number of direct observations available for the weakest segment. Repeating an identical automated calculation does not add calendar evidence: only the latest equivalent calculation contributes. Calendar points are `confidence x (1 - risk)`, and all three results can contribute.
+
+Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Calculated Runs, and Calendar display only calculations produced by the current method.

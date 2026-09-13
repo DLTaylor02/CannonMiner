@@ -15,6 +15,9 @@ final class Router
     private const METERS_PER_MILE = 1609.344;
     private const RISK_SIMULATIONS = 1024;
     private const EMPIRICAL_POINTS = 64;
+    private const INTERNAL_SHORTLIST = 60;
+    private const CONFIDENCE_BOOTSTRAPS = 128;
+    private const CONFIDENCE_DRAWS = 64;
     private array $representativeDates = [];
     private array $predictionCache = [];
 
@@ -69,18 +72,26 @@ final class Router
             : [$a['expected_seconds'],$a['risk']] <=> [$b['expected_seconds'],$b['risk']];
         foreach ($routes as $route) foreach ($departures as $departure) {
             $evaluation = $this->evaluate($route,$departure,$timezone,$mph,$departureInterval);
-            $this->retainBest($bestAll,$evaluation,$compare);
-            if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
+            if ($evaluation !== null) {
+                $this->retainBest($bestAll,$evaluation,$compare);
+                if ($evaluation['risk'] <= $maxRisk) $this->retainBest($bestEligible,$evaluation,$compare);
+            }
             $done+=count($route);
             if ($done === $total || $done-$lastReported >= 25 || microtime(true)-$lastReportedAt >= 10) {
                 $elapsed = microtime(true)-$started; $eta = $done ? ($elapsed/$done)*($total-$done) : null;
                 $progress($done,$total,'Scoring route segments and departure patterns',$eta);$lastReported=$done;$lastReportedAt=microtime(true);
             }
         }
-        $best = $bestEligible ?: $bestAll;
+        $pool=$bestEligible;
+        foreach($bestAll as $evaluation)if(!in_array($evaluation,$pool,true))$pool[]=$evaluation;
+        usort($pool,$compare);
+        $this->addConfidence($pool,$profile);
+        $best=$this->selectDiverse($pool);
+        if($best===[])throw new RuntimeException('No departure pattern has direct observations for every segment in the route. Collect more data and try again.');
         $highestSegmentRisk=0.0;
         foreach($best as $evaluation)foreach($evaluation['segment_risks'] as $segmentRisk)$highestSegmentRisk=max($highestSegmentRisk,$segmentRisk['risk']);
         foreach ($best as &$evaluation) {
+            unset($evaluation['_simulation_risky'],$evaluation['_simulation_seconds']);
             foreach($evaluation['segment_risks'] as &$segmentRisk){
                 $normalized=$highestSegmentRisk>0?$segmentRisk['risk']/$highestSegmentRisk:0.0;
                 $segmentRisk['color']=$this->riskColor($normalized);
@@ -193,7 +204,14 @@ final class Router
 
     private function departurePatterns(DateTimeZone $timezone,int $intervalMinutes): array
     {
-        $dates=$this->representativeDates; ksort($dates); $result=[];
+        $years=array_map(static fn(DateTimeImmutable $date):int=>(int)$date->format('Y'),$this->representativeDates);
+        $year=$years?max($years):(int)(new DateTimeImmutable('now',$timezone))->format('Y');$dates=[];
+        for($month=1;$month<=12;$month++)for($weekday=1;$weekday<=7;$weekday++){
+            $date=(new DateTimeImmutable(sprintf('%04d-%02d-01',$year,$month),$timezone))->modify('last day of this month');
+            while((int)$date->format('N')!==$weekday)$date=$date->modify('-1 day');
+            $dates[$month.'-'.$weekday]=$date;
+        }
+        ksort($dates); $result=[];
         foreach($dates as $date)for($minute=0;$minute<1440;$minute+=$intervalMinutes)$result[]=$date->setTimezone($timezone)->setTime(0,0)->modify('+'.$minute.' minutes');
         usort($result,static fn(DateTimeImmutable $a,DateTimeImmutable $b):int=>$a<=>$b);
         return $result?:[new DateTimeImmutable('now',$timezone)];
@@ -206,28 +224,30 @@ final class Router
         $cacheKey=$segment['name'].'|'.$local->format('N-n-').$bucketMinute;
         if(isset($this->predictionCache[$cacheKey]))return $this->unpackPrediction($this->predictionCache[$cacheKey]);
         $arrivalMinute=$bucketMinute; $arrivalMonth=(int)$local->format('n'); $weekday=(int)$local->format('N');
-        $values=[];$weights=[];
+        $values=[];$weights=[];$directNearby=0;
         for($month=1;$month<=12;$month++)for($delta=-90;$delta<=90;$delta++){
             $minute=($arrivalMinute+$delta+1440)%1440; $key=$month*1000000+$weekday*10000+$minute;
             if(!isset($segment['buckets'][$key]))continue;
             $monthGap=abs($month-$arrivalMonth);$monthGap=min($monthGap,12-$monthGap);
             $weight=exp(-abs($delta)/45)*($monthGap<=1?1.0:.35);
-            foreach($this->unpackDoubles($segment['buckets'][$key]) as $delay){$values[]=$delay;$weights[]=$weight;}
+            foreach($this->unpackDoubles($segment['buckets'][$key]) as $delay){$values[]=$delay;$weights[]=$weight;if($monthGap<=1)$directNearby++;}
         }
         $nearby=count($values);$share=$nearby/($nearby+10.0);
         $localMean=$nearby?$this->weightedMean($values,$weights):$segment['global_mean'];
         $result=['mean'=>$share*$localMean+(1-$share)*$segment['global_mean'],
-            'distance'=>$segment['distance'],'normal'=>$segment['normal_duration'],'nearby'=>$nearby,'share'=>$share,
+            'distance'=>$segment['distance'],'normal'=>$segment['normal_duration'],'nearby'=>$nearby,'direct_nearby'=>$directNearby,'share'=>$share,
             'local_points'=>$nearby?$this->empiricalPoints($values,$weights):[]];
         $this->predictionCache[$cacheKey]=$this->packPrediction($result);return$result;
     }
 
-    private function evaluate(array $route,DateTimeImmutable $departure,DateTimeZone $timezone,float $mph,int $departureInterval): array
+    private function evaluate(array $route,DateTimeImmutable $departure,DateTimeZone $timezone,float $mph,int $departureInterval): ?array
     {
-        $arrival=$departure;$drive=$congestion=$distance=0.0;$support=0;$predictions=[];
+        $arrival=$departure;$drive=$congestion=$distance=0.0;$support=0;$weakestSupport=PHP_INT_MAX;$predictions=[];
         foreach($route as $segment){
             $prediction=$this->prediction($segment,$arrival,$timezone,$departureInterval);$seconds=$prediction['distance']/($mph*self::METERS_PER_MILE/3600);
+            if($prediction['direct_nearby']===0)return null;
             $drive+=$seconds;$congestion+=$prediction['mean'];$distance+=$prediction['distance'];$support+=$prediction['nearby'];
+            $weakestSupport=min($weakestSupport,$prediction['direct_nearby']);
             $predictions[]=[$segment,$prediction,$seconds];$arrival=$arrival->modify('+'.(int)round($seconds+$prediction['mean']).' seconds');
         }
         $seedMaterial=implode('|',array_column($route,'name')).'|'.$departure->format('Y-m-d\TH:i:sP');
@@ -259,7 +279,9 @@ final class Router
         $nodes=array_merge([$route[0]['start']],array_column($route,'end'));
         return ['route'=>implode(' -> ',$nodes),'departure'=>$departure,'drive_seconds'=>$drive,'congestion_seconds'=>$congestion,
             'expected_seconds'=>$drive+$congestion,'risk'=>$events/self::RISK_SIMULATIONS,'distance_miles'=>$distance/self::METERS_PER_MILE,
-            'target_speed_mph'=>$mph,'observations'=>$support,'segments'=>$route,'segment_risks'=>$segmentRisks];
+            'target_speed_mph'=>$mph,'observations'=>$support,'weakest_segment_observations'=>$weakestSupport,
+            'segments'=>$route,'segment_risks'=>$segmentRisks,'_simulation_risky'=>$slow,
+            '_simulation_seconds'=>array_map(static fn(float $delay):float=>$drive+$delay,$totals)];
     }
 
     private function empiricalPoints(array $values,?array $weights=null): array
@@ -282,10 +304,58 @@ final class Router
 
     private function unpackDoubles(string $packed): array { return $packed===''?[]:array_values(unpack('d*',$packed)); }
     private function float32(float $value): float { return unpack('gvalue',pack('g',$value))['value']; }
-    private function packPrediction(array $value): string { return pack('ddddd',$value['mean'],$value['distance'],$value['normal'],(float)$value['nearby'],$value['share']).($value['local_points']?pack('d*',...$value['local_points']):''); }
-    private function unpackPrediction(string $packed): array { $head=unpack('dmean/ddistance/dnormal/dnearby/dshare',$packed);return['mean'=>$head['mean'],'distance'=>$head['distance'],'normal'=>$head['normal'],'nearby'=>(int)$head['nearby'],'share'=>$head['share'],'local_points'=>$this->unpackDoubles(substr($packed,40))]; }
+    private function packPrediction(array $value): string { return pack('dddddd',$value['mean'],$value['distance'],$value['normal'],(float)$value['nearby'],(float)$value['direct_nearby'],$value['share']).($value['local_points']?pack('d*',...$value['local_points']):''); }
+    private function unpackPrediction(string $packed): array { $head=unpack('dmean/ddistance/dnormal/dnearby/ddirect_nearby/dshare',$packed);return['mean'=>$head['mean'],'distance'=>$head['distance'],'normal'=>$head['normal'],'nearby'=>(int)$head['nearby'],'direct_nearby'=>(int)$head['direct_nearby'],'share'=>$head['share'],'local_points'=>$this->unpackDoubles(substr($packed,48))]; }
     private function weightedMean(array $values,array $weights): float { $sum=$weight=0.0;foreach($values as $i=>$v){$sum+=$v*$weights[$i];$weight+=$weights[$i];}return$sum/$weight; }
-    private function retainBest(array &$best,array $item,callable $compare): void { $best[]=$item;usort($best,$compare);if(count($best)>3)array_pop($best); }
+    private function retainBest(array &$best,array $item,callable $compare): void { $best[]=$item;usort($best,$compare);if(count($best)>self::INTERNAL_SHORTLIST)array_pop($best); }
+
+    private function selectDiverse(array $ranked): array
+    {
+        if($ranked===[])return[];$selected=[array_shift($ranked)];
+        $take=function(callable $accept)use(&$ranked,&$selected):void{
+            foreach($ranked as $index=>$candidate)if($accept($candidate,$selected)){$selected[]=$candidate;array_splice($ranked,$index,1);return;}
+        };
+        $take(static fn(array $candidate,array $chosen):bool=>$candidate['departure']->format('Y-m-d')!==$chosen[0]['departure']->format('Y-m-d'));
+        $take(static function(array $candidate,array $chosen):bool{
+            $differentRoute=true;$differentWindow=true;
+            foreach($chosen as $item){
+                if($candidate['route']===$item['route'])$differentRoute=false;
+                if(abs($candidate['departure']->getTimestamp()-$item['departure']->getTimestamp())<3600)$differentWindow=false;
+            }
+            return $differentRoute||$differentWindow;
+        });
+        while(count($selected)<3&&$ranked)$selected[]=array_shift($ranked);
+        return array_slice($selected,0,3);
+    }
+
+    private function addConfidence(array &$ranked,string $profile): void
+    {
+        if($ranked===[])return;
+        $material=implode('|',array_map(static fn(array $item):string=>$item['route'].'@'.$item['departure']->format(DATE_ATOM),$ranked));
+        $seed=unpack('q',substr(hash('sha256','confidence|'.$material,true),0,8))[1];
+        $random=new Randomizer(new PcgOneseq128XslRr64($seed));$topThree=array_fill(0,count($ranked),0);
+        for($trial=0;$trial<self::CONFIDENCE_BOOTSTRAPS;$trial++){
+            $trialScores=[];
+            foreach($ranked as $index=>$candidate){
+                $riskEvents=0;$seconds=0.0;
+                for($draw=0;$draw<self::CONFIDENCE_DRAWS;$draw++){
+                    $sample=$random->getInt(0,self::RISK_SIMULATIONS-1);
+                    if($candidate['_simulation_risky'][$sample])$riskEvents++;
+                    $seconds+=$candidate['_simulation_seconds'][$sample];
+                }
+                $risk=$riskEvents/self::CONFIDENCE_DRAWS;$expected=$seconds/self::CONFIDENCE_DRAWS;
+                $trialScores[]=['index'=>$index,'score'=>$profile==='reliability'?[$risk,$expected]:[$expected,$risk]];
+            }
+            usort($trialScores,static fn(array $a,array $b):int=>$a['score']<=>$b['score']);
+            foreach(array_slice($trialScores,0,3) as $item)$topThree[$item['index']]++;
+        }
+        foreach($ranked as $index=>&$candidate){
+            $coverage=$candidate['weakest_segment_observations']/($candidate['weakest_segment_observations']+10.0);
+            $candidate['ranking_stability']=$topThree[$index]/self::CONFIDENCE_BOOTSTRAPS;
+            $candidate['confidence']=$coverage*$candidate['ranking_stability'];
+        }
+        unset($candidate);
+    }
 
     private function riskColor(float $risk): string
     {
