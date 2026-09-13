@@ -273,13 +273,45 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
         $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
         $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$recommendations,'points'=>$points,'run_id'=>$row['latest_id']];
     }
+    $trendRows=$pdo->query(<<<'SQL'
+        WITH observed AS (
+          SELECT extract(month FROM m.collected_at AT TIME ZONE s.timezone)::int AS month,
+            extract(isodow FROM m.collected_at AT TIME ZONE s.timezone)::int AS weekday,
+            extract(hour FROM m.collected_at AT TIME ZONE s.timezone)::int AS hour,
+            s.name,s.timezone,count(*)::int AS observations,
+            avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))::float AS avg_delay,
+            (percentile_cont(.9) WITHIN GROUP (ORDER BY greatest(0,m.duration_in_traffic_seconds-m.duration_seconds)))::float AS p90_delay,
+            (avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))/nullif(avg(m.duration_seconds),0))::float AS severity
+          FROM measurements m JOIN segments s ON s.id=m.segment_id
+          WHERE s.enabled AND m.duration_in_traffic_seconds IS NOT NULL AND m.duration_seconds>0
+          GROUP BY month,weekday,hour,s.name,s.timezone
+          HAVING count(*)>=2
+            AND avg(greatest(0,m.duration_in_traffic_seconds-m.duration_seconds))>=greatest(120.0,avg(m.duration_seconds)*.05)
+        ), ranked AS (
+          SELECT observed.*,row_number() OVER (PARTITION BY month,weekday ORDER BY severity DESC,avg_delay DESC) AS rank
+          FROM observed
+        )
+        SELECT * FROM ranked WHERE rank<=3 ORDER BY severity DESC
+    SQL)->fetchAll();
+    $trends=[];$maximumTrend=0.0;
+    foreach($trendRows as $row){
+        $key=$row['month'].'-'.$row['weekday'];$severity=(float)$row['severity'];$maximumTrend=max($maximumTrend,$severity);
+        $zone=new DateTimeZone((string)$row['timezone']);$hour=(int)$row['hour'];
+        $local=(new DateTimeImmutable(sprintf('%04d-%02d-01 %02d:00',$selectedYear,(int)$row['month'],$hour),$zone));
+        $trends[$key][]=['name'=>$row['name'],'time'=>$local->format('g A T'),'avg_delay'=>(float)$row['avg_delay'],
+            'p90_delay'=>(float)$row['p90_delay'],'observations'=>(int)$row['observations'],'severity'=>$severity];
+    }
     $maximum=$counts?max($counts):0;$months=[];$holidays=\CannonMiner\UsBankHolidays::forYear($selectedYear,$timezone);
     for($month=1;$month<=12;$month++){
         $start=new DateTimeImmutable(sprintf('%04d-%02d-01',$selectedYear,$month),$timezone);$days=[];
         for($day=1,$limit=(int)$start->format('t');$day<=$limit;$day++){
-            $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;$color=null;$dark=false;
-            if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$color='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
-            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'recommendations'=>$recommendationCounts[$date]??0,'color'=>$color,'dark'=>$dark,'departures'=>$departures[$date]??[],'holidays'=>$holidays[$date]??[]];
+            $date=sprintf('%04d-%02d-%02d',$selectedYear,$month,$day);$count=$counts[$date]??0;
+            $calendarDate=$start->setDate($selectedYear,$month,$day);$pattern=$month.'-'.$calendarDate->format('N');
+            $dayTrends=$trends[$pattern]??[];$green=null;$red=null;$dark=false;
+            if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$green='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
+            if($dayTrends){$intensity=$maximumTrend>0?max(array_column($dayTrends,'severity'))/$maximumTrend:0;$from=[255,242,240];$to=[181,59,50];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$red='rgb('.implode(',',$rgb).')';$dark=$dark||$intensity>=.55;}
+            $background=$green&&$red?"linear-gradient(90deg,{$green} 0%,{$green} 47%,{$red} 53%,{$red} 100%)":($green??$red);
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'recommendations'=>$recommendationCounts[$date]??0,'color'=>$background,'dark'=>$dark,'departures'=>$departures[$date]??[],'trends'=>$dayTrends,'holidays'=>$holidays[$date]??[]];
         }
         $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
     }
