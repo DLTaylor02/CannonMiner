@@ -18,9 +18,9 @@ $latestStorage=$pdo->query('SELECT max(recorded_at) FROM storage_metrics')->fetc
 $storageDue=!$latestStorage||strtotime((string)$latestStorage)<=time()-4*3600;
 if($scheduled){
     $latestMetric=$pdo->query('SELECT max(recorded_at) FROM system_metrics')->fetchColumn();
-    $automationRunning=(bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE calculation_method_version=2 AND job_type='automated' AND status='running')")->fetchColumn();
+    $automationRunning=(bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE calculation_method_version=3 AND job_type='automated' AND status='running')")->fetchColumn();
     $metricsDue=$automationRunning||!$latestMetric||strtotime((string)$latestMetric)<=time()-$telemetryInterval*60;
-    $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE calculation_method_version=2 AND job_type='automated'")->fetchColumn();
+    $latestAutomation=$pdo->query("SELECT max(created_at) FROM analysis_jobs WHERE calculation_method_version=3 AND job_type='automated'")->fetchColumn();
     $automationDue=$settings->get('automation_enabled','yes')==='yes'
         &&(!$latestAutomation||strtotime((string)$latestAutomation)<=time()-$interval*60);
     if(!$metricsDue&&!$storageDue&&!$automationDue)exit(0);
@@ -79,13 +79,13 @@ function recordStorageMetric(PDO $pdo,string $root):void{
 if($metricsDue)recordCpuMetric($pdo);
 if($storageDue)recordStorageMetric($pdo,$root);
 if(!$automationDue)exit(0);
-if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE calculation_method_version=2 AND job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
+if((bool)$pdo->query("SELECT EXISTS(SELECT 1 FROM analysis_jobs WHERE calculation_method_version=3 AND job_type='automated' AND status IN ('queued','running'))")->fetchColumn()){
     if(!$scheduled)fwrite(STDOUT,"An automated calculation batch is still active; telemetry recorded without adding duplicate jobs.\n");exit(0);
 }
 $router=new Router($pdo,$settings);$routes=$router->routeOptions();
 $userId=$pdo->query("SELECT id FROM users WHERE role='superadmin' LIMIT 1")->fetchColumn();
 if(!$userId)throw new RuntimeException('The automation job requires a superadmin account.');
-$insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type,calculation_method_version) VALUES (?,?, 'queued',?::jsonb,'automated',2)");
+$insert=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type,calculation_method_version) VALUES (?,?, 'queued',?::jsonb,'automated',3)");
 $speed=max(1,min(250,(float)$settings->get('automation_speed_mph','110')));$profile=(string)$settings->get('automation_profile','balanced');
 if(!in_array($profile,['balanced','fastest','reliability'],true))$profile='balanced';$risk=max(0,min(1,(float)$settings->get('automation_max_risk','.20')));
 $pdo->beginTransaction();

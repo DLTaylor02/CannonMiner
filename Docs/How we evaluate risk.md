@@ -19,6 +19,6 @@ The configured maximum risk does **not** change this calculation. It filters the
 
 Before this risk calculation runs, the current calculation method requires direct observations for every segment from the same weekday, the same or an adjacent month, and the relevant time window. Unsupported candidates are excluded rather than estimated. This eligibility rule and the separately displayed confidence value do not modify the risk formula.
 
-Confidence measures evidence quality rather than danger. CannonMiner bootstraps the existing simulation outcomes to estimate how often a candidate remains in the top three, then combines that stability with the direct observation count for the least-supported segment. Calendar points use `confidence x (1 - risk)`.
+Confidence measures evidence quality rather than danger. CannonMiner bootstraps the existing simulation outcomes to estimate how often a candidate remains in the top three. It calibrates evidence coverage against the median weakest-segment sample count among the candidates being compared, so that the median level of support equals 50% coverage. Confidence is the geometric mean of ranking stability and evidence coverage. Calendar points use `confidence x (1 - risk)`.
 
 One important detail: under the **Reliability** strategy, routes are ranked by risk first and expected time second. Both **Balanced** and **Fastest** currently rank by expected time first and use risk only as the tie-breaker. So at present, Balanced and Fastest effectively behave the same.

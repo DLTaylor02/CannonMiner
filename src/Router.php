@@ -331,6 +331,10 @@ final class Router
     private function addConfidence(array &$ranked,string $profile): void
     {
         if($ranked===[])return;
+        $supports=array_map(static fn(array $candidate):int=>$candidate['weakest_segment_observations'],$ranked);
+        sort($supports,SORT_NUMERIC);$middle=intdiv(count($supports),2);
+        $baseline=count($supports)%2?$supports[$middle]:($supports[$middle-1]+$supports[$middle])/2;
+        $baseline=max(1.0,(float)$baseline);
         $material=implode('|',array_map(static fn(array $item):string=>$item['route'].'@'.$item['departure']->format(DATE_ATOM),$ranked));
         $seed=unpack('q',substr(hash('sha256','confidence|'.$material,true),0,8))[1];
         $random=new Randomizer(new PcgOneseq128XslRr64($seed));$topThree=array_fill(0,count($ranked),0);
@@ -350,9 +354,11 @@ final class Router
             foreach(array_slice($trialScores,0,3) as $item)$topThree[$item['index']]++;
         }
         foreach($ranked as $index=>&$candidate){
-            $coverage=$candidate['weakest_segment_observations']/($candidate['weakest_segment_observations']+10.0);
+            $coverage=$candidate['weakest_segment_observations']/($candidate['weakest_segment_observations']+$baseline);
             $candidate['ranking_stability']=$topThree[$index]/self::CONFIDENCE_BOOTSTRAPS;
-            $candidate['confidence']=$coverage*$candidate['ranking_stability'];
+            $candidate['evidence_coverage']=$coverage;
+            $candidate['confidence_baseline_observations']=$baseline;
+            $candidate['confidence']=sqrt($coverage*$candidate['ranking_stability']);
         }
         unset($candidate);
     }

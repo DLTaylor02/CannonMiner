@@ -48,7 +48,7 @@ while (true) {
     }
 
     $currentId = (string) $job['id'];
-    $claim = $pdo->prepare("UPDATE analysis_jobs SET status='running',started_at=now(),updated_at=now(),stage='Loading traffic observations' WHERE id=?");
+    $claim = $pdo->prepare("UPDATE analysis_jobs SET status='running',calculation_method_version=3,started_at=now(),updated_at=now(),stage='Loading traffic observations' WHERE id=?");
     $claim->execute([$currentId]);
     $pdo->commit();
     $finished = false;
