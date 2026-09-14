@@ -16,8 +16,8 @@
         const spinner = container.querySelector('[data-queue-spinner]');
         if (count) count.textContent = String(active);
         if (label) label.textContent = running
-          ? `${queued} automated ${queued === 1 ? 'calculation' : 'calculations'} queued; automation running`
-          : `${queued} automated ${queued === 1 ? 'calculation' : 'calculations'} queued`;
+          ? `${active} automated ${active === 1 ? 'calculation' : 'calculations'} active; automation running`
+          : `${active} automated ${active === 1 ? 'calculation' : 'calculations'} active`;
         if (spinner) {
           spinner.hidden = running === 0;
           spinner.classList.toggle('queue-spinner', running > 0);
