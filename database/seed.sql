@@ -6,7 +6,7 @@ INSERT INTO settings (key, value) VALUES
 ('password_min_strength', 'strong'), ('password_min_length', '12'),
 ('automation_enabled', 'yes'), ('automation_interval_minutes', '60'),
 ('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
-('telemetry_interval_minutes', '15')
+('telemetry_interval_minutes', '15'), ('dashboard_banner', '')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO segments (name,start_node,end_node,origin,destination,timezone) VALUES

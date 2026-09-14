@@ -181,7 +181,8 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     $apiUsage=['actual'=>$apiActual,'forecast_per_hour'=>round($directionsPerHour+$staticMapsPerHour,2),
         'forecast_end'=>(new DateTimeImmutable((string)$forecastEnd))->format(DATE_ATOM),
         'reconstructed_requests'=>(int)($apiActual[array_key_last($apiActual)]['reconstructed_requests']??0)];
-    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
+    $dashboardBanner=trim((string)$settings->get('dashboard_banner',''));
+    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'dashboard_banner'=>$dashboardBanner,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
@@ -449,7 +450,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if ($request->getMethod() === 'POST') {
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
         $body['default_max_delay_risk']=(string)(max(0,min(100,(float)($body['default_max_delay_risk']??20)))/100);
         if($identity['role']==='superadmin'){
