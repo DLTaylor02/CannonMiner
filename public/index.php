@@ -103,6 +103,16 @@ $app->post('/theme', function(Request $request,Response $response)use($pdo,$csrf
     return $response->withHeader('Location',$request->getHeaderLine('Referer')?:'/')->withStatus(302);
 })->add($guard);
 $app->get('/favicon.ico', static fn(Request $request,Response $response):Response => $response->withStatus(204));
+$app->get('/analysis-queue/status',function(Request $request,Response $response)use($pdo):Response{
+    $status=$pdo->query(<<<'SQL'
+        SELECT count(*) FILTER (WHERE job_type='automated' AND status='queued')::int AS automated_queued,
+          count(*) FILTER (WHERE job_type='automated' AND status='running')::int AS automated_running
+        FROM analysis_jobs
+        WHERE status IN ('queued','running')
+    SQL)->fetch();
+    $response->getBody()->write(json_encode($status,JSON_THROW_ON_ERROR));
+    return $response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
 
 $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$render):Response{
     $summary=$pdo->query(<<<'SQL'
@@ -174,7 +184,7 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
-$app->map(['GET','POST'], '/plan', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
+$app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
     $nodes = $router->nodes(); $input = ['start'=>'redball','end'=>'portofino','speed'=>(float)$settings->get('default_speed_mph','110'),
         'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];
     $routes=$router->routeOptions();$results = []; $error = null;
