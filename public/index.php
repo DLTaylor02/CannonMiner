@@ -348,30 +348,37 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $historyCte=<<<SQL
         WITH history_source AS (
           SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,j.input->>'profile' AS profile,
-            j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 AS comparable,
+            result_item.item <> 'null'::jsonb AS comparable,
+            (result_item.position-1)::int AS result_index,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN CASE result_item.position
+              WHEN 1 THEN coalesce(result_item.item->>'designation','recommended')
+              WHEN 2 THEN coalesce(result_item.item->>'designation','day_alternative')
+              WHEN 3 THEN coalesce(result_item.item->>'designation','route_time_alternative')
+              ELSE coalesce(result_item.item->>'designation','alternative')
+            END END AS designation,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN round(((result_item.item->>'target_speed_mph')::numeric)*10)::int END AS target_speed_tenths,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN result_item.item->>'route' END AS route,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN date_trunc('minute',(result_item.item->>'departure')::timestamptz) END AS departure_minute,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN round(((result_item.item->>'risk')::numeric)*1000)::int END AS risk_tenths,
+            CASE WHEN result_item.item <> 'null'::jsonb THEN round(((result_item.item->>'expected_seconds')::numeric)/60)::int END AS expected_minutes
+          FROM analysis_jobs j
+          JOIN users u ON u.id=j.user_id
+          LEFT JOIN LATERAL jsonb_array_elements(
             CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN round(((j.result->0->>'target_speed_mph')::numeric)*10)::int END AS target_speed_tenths,
-            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN j.result->0->>'route' END AS route,
-            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN date_trunc('minute',(j.result->0->>'departure')::timestamptz) END AS departure_minute,
-            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN round(((j.result->0->>'risk')::numeric)*1000)::int END AS risk_tenths,
-            CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0
-              THEN round(((j.result->0->>'expected_seconds')::numeric)/60)::int END AS expected_minutes
-          FROM analysis_jobs j JOIN users u ON u.id=j.user_id{$where}
+              THEN j.result ELSE '[null]'::jsonb END
+          ) WITH ORDINALITY AS result_item(item,position) ON true{$where}
         ), grouped_history AS (
           SELECT (array_agg(id ORDER BY created_at DESC,id DESC))[1] AS id,
             (array_agg(username ORDER BY created_at DESC,id DESC))[1] AS username,
             (array_agg(status ORDER BY created_at DESC,id DESC))[1] AS status,
             (array_agg(stage ORDER BY created_at DESC,id DESC))[1] AS stage,
             (array_agg(job_type ORDER BY created_at DESC,id DESC))[1] AS job_type,
-            max(created_at) AS created_at,profile,target_speed_tenths/10.0 AS target_speed_mph,route,
+            max(created_at) AS created_at,profile,result_index,designation,target_speed_tenths/10.0 AS target_speed_mph,route,
             departure_minute AS departure,
             risk_tenths/1000.0 AS risk,expected_minutes*60 AS expected_seconds,
             count(*)::int AS matches
           FROM history_source
-          GROUP BY profile,target_speed_tenths,route,departure_minute,risk_tenths,expected_minutes,
+          GROUP BY profile,result_index,designation,target_speed_tenths,route,departure_minute,risk_tenths,expected_minutes,
             {$groupDiscriminator}
         )
     SQL;

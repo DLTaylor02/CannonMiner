@@ -329,7 +329,11 @@ final class Router
             return $differentRoute||$differentWindow;
         });
         while(count($selected)<3&&$ranked)$selected[]=array_shift($ranked);
-        return array_slice($selected,0,3);
+        $selected=array_slice($selected,0,3);
+        $designations=['recommended','day_alternative','route_time_alternative'];
+        foreach($selected as $index=>&$candidate)$candidate['designation']=$designations[$index];
+        unset($candidate);
+        return $selected;
     }
 
     private function addConfidence(array &$ranked,string $profile): void
