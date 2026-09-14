@@ -213,7 +213,17 @@ $app->get('/analysis/{id}/map/{rank}',function(Request $request,Response $respon
     }catch(Throwable){return $response->withStatus(502)->withHeader('Cache-Control','private, no-store');}
 })->add($guard);
 $app->get('/analysis/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
-    $statement=$pdo->prepare('SELECT status,progress_current,progress_total,stage,eta_seconds,updated_at,error,result FROM analysis_jobs WHERE id=?');
+    $statement=$pdo->prepare(<<<'SQL'
+        SELECT j.status,j.progress_current,j.progress_total,j.stage,j.eta_seconds,j.updated_at,j.error,j.result,
+          CASE WHEN j.status='queued' THEN (
+            SELECT count(*) FROM analysis_jobs q
+            WHERE q.status='queued' AND (q.created_at,q.id)<=(j.created_at,j.id)
+          )::int END AS queue_position,
+          CASE WHEN j.status='queued' THEN (
+            SELECT count(*) FROM analysis_jobs q WHERE q.status='queued'
+          )::int END AS queue_total
+        FROM analysis_jobs j WHERE j.id=?
+    SQL);
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return $response->withStatus(404);
     $job['updated_at']=(new DateTimeImmutable((string)$job['updated_at']))->format(DATE_ATOM);
     if($job['result']!==null){
@@ -323,7 +333,13 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $descendingDefault=in_array($sort,['run','matches'],true);
     $direction=(string)($query['dir']??($descendingDefault?'desc':'asc'));if(!in_array($direction,['asc','desc'],true))$direction=$descendingDefault?'desc':'asc';
     $grouped=(string)($query['grouped']??'1')!=='0';
-    $perPage=(string)($query['per_page']??'20');if(!in_array($perPage,['20','40','60','80','all'],true))$perPage='20';
+    $pageSizes=['20','40','60','80','all'];
+    if(array_key_exists('per_page',$query)){
+        $perPage=(string)$query['per_page'];if(!in_array($perPage,$pageSizes,true))$perPage='20';
+        $_SESSION['history_per_page']=$perPage;
+    }else{
+        $perPage=(string)($_SESSION['history_per_page']??'20');if(!in_array($perPage,$pageSizes,true))$perPage='20';
+    }
     $users=$pdo->query('SELECT DISTINCT u.id,u.username FROM users u JOIN analysis_jobs j ON j.user_id=u.id WHERE j.calculation_method_version=3 ORDER BY u.username')->fetchAll();
     $userId=max(0,(int)($query['user']??0));$validUserIds=array_map(static fn(array $user):int=>(int)$user['id'],$users);if($userId&&!in_array($userId,$validUserIds,true))$userId=0;
     $speeds=array_map('floatval',array_column($pdo->query(<<<'SQL'
