@@ -11,7 +11,7 @@ use RuntimeException;
 
 final class Planner
 {
-    public const METHOD_VERSION = 1;
+    public const METHOD_VERSION = 2;
 
     public function __construct(private PDO $pdo) {}
 
@@ -48,11 +48,12 @@ final class Planner
         foreach($rows as $row){
             $result=json_decode((string)$row['result'],true,512,JSON_THROW_ON_ERROR);
             $departure=new DateTimeImmutable((string)$result['departure']);
-            $key=implode('|',[(string)$result['route'],$departure->setTimezone($timezone)->format('n-N-H:i'),
+            $localDeparture=$departure->setTimezone($timezone);$pattern=$this->calendarPattern($localDeparture);
+            $key=implode('|',[(string)$result['route'],$pattern.'-'.$localDeparture->format('H:i'),
                 (string)round((float)$result['risk']*1000),(string)round((float)$result['expected_seconds']/60)]);
             if(isset($groups[$key])){$groups[$key]['matches']++;continue;}
-            $groups[$key]=['route'=>(string)$result['route'],'pattern'=>$departure->setTimezone($timezone)->format('n-N'),
-                'time'=>$departure->setTimezone($timezone)->format('H:i'),'expected'=>(float)$result['expected_seconds'],
+            $groups[$key]=['route'=>(string)$result['route'],'pattern'=>$pattern,
+                'time'=>$localDeparture->format('H:i'),'expected'=>(float)$result['expected_seconds'],
                 'risk'=>(float)$result['risk'],'confidence'=>(float)($result['confidence']??0),'matches'=>1,
                 'source_id'=>(string)$row['id'],'source_index'=>(int)$row['result_index'],'source_at'=>(string)$row['created_at'],
                 'map_available'=>!empty($result['map_url']),'segment_risks'=>(array)($result['segment_risks']??[])];
@@ -60,7 +61,7 @@ final class Planner
         $progress(2, 4, 'Projecting supported patterns onto future dates');
         $candidates=[];$cursor=$start->setTime(0,0);
         while($cursor<=$end){
-            $pattern=$cursor->format('n-N');
+            $pattern=$this->calendarPattern($cursor);
             foreach($groups as $group){
                 if($group['pattern']!==$pattern)continue;
                 $hour=(int)substr($group['time'],0,2);if($hour<$hourStart||$hour>$hourEnd)continue;
@@ -129,5 +130,11 @@ final class Planner
         else{$share=($risk-.5)*2;$from=[240,180,41];$to=[198,40,40];}
         $rgb=array_map(static fn(int $start,int $end):int=>(int)round($start+($end-$start)*$share),$from,$to);
         return sprintf('%02x%02x%02x',...$rgb);
+    }
+
+    private function calendarPattern(DateTimeImmutable $date):string
+    {
+        $occurrence=$date->modify('+7 days')->format('n')!==$date->format('n')?'last':(string)(int)ceil((int)$date->format('j')/7);
+        return $date->format('n-N').'-'.$occurrence;
     }
 }

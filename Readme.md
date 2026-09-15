@@ -116,6 +116,11 @@ includes the latest supporting calculation and a cruising-speed calculator link,
 and provides a **Print** button for paper or PDF output. Previous projections
 remain available under **Run Windows**.
 
+Future dates preserve the historical weekday occurrence within each month. For
+example, evidence calculated for the last Friday of a month projects only onto
+future last Fridays, rather than treating every Friday as equivalent. This
+calendar-pattern correction is projection method version 2.
+
 Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Historical Analysis, and Calendar display only calculations produced by the current method. The dynamically calibrated confidence calculation is method version 3.
 
 The Calendar uses green cell shading for recommendation points and a red top-left corner marker for recurring traffic conditions derived directly from measurements. The marker appears only when a segment-local month, weekday, and hour has at least two observations and its average delay exceeds the meaningful slowdown threshold. Its red intensity represents relative severity. A car icon marks days included in completed future projections without changing the historical point shading. Selecting a day shows its recommended departures, projected windows, and the affected segments, local times, delays, and sample counts.

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS planning_jobs (
 );
 CREATE INDEX IF NOT EXISTS planning_jobs_user_time_idx ON planning_jobs(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS planning_jobs_queue_idx ON planning_jobs(created_at,id) WHERE status='queued';
+ALTER TABLE planning_jobs ALTER COLUMN planning_method_version SET DEFAULT 2;
 
 CREATE TABLE IF NOT EXISTS system_metrics (
     id BIGSERIAL PRIMARY KEY,

@@ -364,16 +364,16 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     $requestedSpeed=round((float)($request->getQueryParams()['speed']??$settings->get('automation_speed_mph','110')),1);
     $selectedSpeed=$speeds[0];foreach($speeds as $speed)if(abs($speed-$requestedSpeed)<.05){$selectedSpeed=$speed;break;}
     $timezone=new DateTimeZone('America/New_York');$currentYear=(int)(new DateTimeImmutable('now',$timezone))->format('Y');
-    $years=array_map('intval',array_column($pdo->query(<<<'SQL'
+    $yearStatement=$pdo->prepare(<<<'SQL'
         SELECT DISTINCT year FROM (
           SELECT extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
           FROM analysis_jobs WHERE calculation_method_version=3 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0 AND result->0->>'departure' IS NOT NULL
           UNION ALL
           SELECT extract(year FROM ((item->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
           FROM planning_jobs CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(result)='array' THEN result ELSE '[]'::jsonb END) AS item
-          WHERE planning_method_version=1 AND status='complete' AND item->>'departure' IS NOT NULL
+          WHERE planning_method_version=? AND status='complete' AND item->>'departure' IS NOT NULL
         ) available_years ORDER BY year DESC
-    SQL)->fetchAll(),'year'));
+    SQL);$yearStatement->execute([Planner::METHOD_VERSION]);$years=array_map('intval',array_column($yearStatement->fetchAll(),'year'));
     if(!in_array($currentYear,$years,true))$years[]=$currentYear;rsort($years);
     $requestedYear=(int)($request->getQueryParams()['year']??$currentYear);$selectedYear=in_array($requestedYear,$years,true)?$requestedYear:$currentYear;
     $countsStatement=$pdo->prepare(<<<'SQL'
