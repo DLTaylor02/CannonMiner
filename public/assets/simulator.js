@@ -2,6 +2,7 @@
   const config = window.CannonMinerSimulation;
   const canvas = document.getElementById('simulation-map');
   const context = canvas.getContext('2d');
+  const summaryCanvas = document.getElementById('summary-route-map');
   const statusNode = document.getElementById('simulation-status');
   const timeNode = document.getElementById('simulation-time');
   const errorNode = document.getElementById('simulation-error');
@@ -34,6 +35,32 @@
     return points;
   }
 
+  const pointAt = (points, fraction) => { const position = Math.max(0, Math.min(1, fraction)) * (points.length - 1), low = Math.floor(position), share = position - low, high = Math.min(points.length - 1, low + 1); return [points[low][0] + (points[high][0] - points[low][0]) * share, points[low][1] + (points[high][1] - points[low][1]) * share]; };
+  const speedColor = ratio => { ratio = Math.max(0, Math.min(1, Number(ratio) || 0)); const red = [181, 59, 50], green = [23, 107, 77], rgb = red.map((value, index) => Math.round(value + (green[index] - value) * ratio)); return `rgb(${rgb.join(',')})`; };
+  function strokeRange(target, points, project, from, to, color, width = 8) {
+    if (points.length < 2 || to <= from) return;
+    const start = Math.max(0, Math.min(1, from)) * (points.length - 1), end = Math.max(0, Math.min(1, to)) * (points.length - 1);
+    target.strokeStyle = color; target.lineWidth = width; target.lineCap = 'round'; target.lineJoin = 'round'; target.beginPath();
+    let [x, y] = project(pointAt(points, from)); target.moveTo(x, y);
+    for (let index = Math.ceil(start); index <= Math.floor(end); index++) { [x, y] = project(points[index]); target.lineTo(x, y); }
+    [x, y] = project(pointAt(points, to)); target.lineTo(x, y); target.stroke();
+  }
+  function drawMapEvents(target, points, project, events, lift = 0) {
+    const stacked = new Map(), symbols = {fuel_stop: '\u26fd', driver_change: '\u21c4', police_event: '\u{1f693}', flat_tire: '\u{1f6de}', road_event: '\u{1f6a7}', weather_fog: '\u{1f32b}\ufe0f', weather_rain: '\u{1f327}\ufe0f', weather_ice: '\u{1f9ca}', weather_snow: '\u{1f328}\ufe0f'};
+    (events || []).forEach(event => {
+      if (!symbols[event.type]) return;
+      const key = Math.round(Number(event.fraction) * 1000), stack = stacked.get(key) || 0; stacked.set(key, stack + 1);
+      let [x, y] = project(pointAt(points, Number(event.fraction))); y += lift - stack * 27;
+      target.fillStyle = '#fff'; target.strokeStyle = '#18211d'; target.lineWidth = 2; target.beginPath(); target.arc(x, y, 13, 0, Math.PI * 2); target.fill(); target.stroke();
+      target.fillStyle = '#18211d'; target.font = 'bold 16px sans-serif'; target.textAlign = 'center'; target.textBaseline = 'middle'; target.fillText(symbols[event.type], x, y + 1);
+    });
+  }
+  function routeProjection(targetCanvas, allPoints, pad) {
+    const xs = allPoints.map(point => point[0]), ys = allPoints.map(point => point[1]), minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const scale = Math.min((targetCanvas.width - pad * 2) / Math.max(.001, maxX - minX), (targetCanvas.height - pad * 2) / Math.max(.001, maxY - minY));
+    return point => [pad + (point[0] - minX) * scale, targetCanvas.height - pad - (point[1] - minY) * scale];
+  }
+
   function drawMap(segment) {
     context.fillStyle = '#101713'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.strokeStyle = 'rgba(255,255,255,.06)'; context.lineWidth = 1;
@@ -42,15 +69,26 @@
     if (!segment || !segment.polyline) { context.fillStyle = '#aab8b0'; context.font = '24px sans-serif'; context.textAlign = 'center'; context.fillText(segment ? 'Route geometry unavailable' : 'Choose an onward segment', canvas.width / 2, canvas.height / 2); return; }
     const points = decodePolyline(segment.polyline);
     if (points.length < 2) return;
-    const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys), pad = 55;
-    const scale = Math.min((canvas.width - pad * 2) / Math.max(.001, maxX - minX), (canvas.height - pad * 2) / Math.max(.001, maxY - minY));
-    const project = point => [pad + (point[0] - minX) * scale, canvas.height - pad - (point[1] - minY) * scale];
-    context.strokeStyle = '#35a866'; context.lineWidth = 8; context.lineCap = 'round'; context.lineJoin = 'round'; context.beginPath();
-    points.forEach((point, index) => { const [x, y] = project(point); index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.stroke();
+    const project = routeProjection(canvas, points, 55);
+    strokeRange(context, points, project, 0, 1, '#66706b');
+    (segment.speed_trace || []).forEach(band => strokeRange(context, points, project, Number(band.from), Number(band.to), speedColor(band.ratio)));
+    drawMapEvents(context, points, project, segment.map_events, -25);
     const fraction = Math.max(0, Math.min(1, segment.elapsed_seconds / Math.max(1, segment.total_seconds))), position = fraction * (points.length - 1), low = Math.floor(position), share = position - low;
     const a = project(points[low]), b = project(points[Math.min(points.length - 1, low + 1)]), x = a[0] + (b[0] - a[0]) * share, y = a[1] + (b[1] - a[1]) * share;
     context.fillStyle = '#fff'; context.beginPath(); context.arc(x, y, 11, 0, Math.PI * 2); context.fill(); context.fillStyle = '#e93d32'; context.beginPath(); context.arc(x, y, 7, 0, Math.PI * 2); context.fill();
+  }
+
+  function drawSummaryMap(state) {
+    if (!summaryCanvas) return;
+    const target = summaryCanvas.getContext('2d'), segments = [...(state.traveled_segments || [])];
+    if (state.current_segment?.polyline) segments.push(state.current_segment);
+    const decoded = segments.filter(segment => segment.polyline).map(segment => ({segment, points: decodePolyline(segment.polyline)})).filter(item => item.points.length > 1);
+    target.fillStyle = '#101713'; target.fillRect(0, 0, summaryCanvas.width, summaryCanvas.height);
+    if (!decoded.length) { target.fillStyle = '#aab8b0'; target.font = '24px sans-serif'; target.textAlign = 'center'; target.fillText('Route geometry unavailable', summaryCanvas.width / 2, summaryCanvas.height / 2); return; }
+    const project = routeProjection(summaryCanvas, decoded.flatMap(item => item.points), 36);
+    decoded.forEach(({points}) => strokeRange(target, points, project, 0, 1, '#66706b', 7));
+    decoded.forEach(({segment, points}) => (segment.speed_trace || []).forEach(band => strokeRange(target, points, project, Number(band.from), Number(band.to), speedColor(band.ratio), 7)));
+    decoded.forEach(({segment, points}) => drawMapEvents(target, points, project, segment.map_events, -17));
   }
 
   const eventText = (type, payload) => ({simulation_created: `Simulation created in ${payload.mode} mode`, segment_entered: `Entered ${routeName(payload.segment)}`, traffic_delay: `Traffic encountered; speed limited to ${payload.speed_cap} mph`, traffic_cap_lifted: `Traffic cleared; returning to ${payload.speed} mph`, weather_event: `${String(payload.weather || 'weather').replace(/^./, letter => letter.toUpperCase())}; speed limited to ${payload.speed_cap} mph`, police_event: payload.jailed ? 'Police stop ended the run' : 'Police stop added 30 minutes', road_event: `Road obstacle${payload.mitigated ? ' mitigated' : ''} +${duration(payload.delay_seconds)}`, flat_tire: 'Flat tire: controlled stop and 15-minute repair', segment_completed: `Arrived at ${locationName(payload.node)}`, route_choice_required: `Route choice required at ${locationName(payload.node)}`, fatigue_threshold: `${payload.driver} fatigue reached ${payload.fatigue}%`, driver_exhausted: `${payload.driver} reached full fatigue`, copilot_exhausted: `${payload.driver} must rest`, driver_change_requested: `Decelerated to change drivers (${duration(payload.seconds)})`, driver_changed: 'New driver took the wheel', driver_change_complete: payload.during_fuel ? 'Driver changed during fuel stop with no added time' : `Returned to speed in ${duration(payload.seconds)}`, copilot_changed: 'Co-pilot assignment changed', target_speed_changed: `Target speed set to ${payload.speed} mph`, fuel_warning: `Fuel below ${payload.percent}%`, fuel_stop: `Fuel stop: ${payload.gallons} gal, ${duration(payload.seconds)}`, paused: 'Simulation paused', resumed: 'Simulation resumed', event_acknowledged: 'Crew responded to obstacle', crew_jailed: 'Crew taken to jail. Run ended.', out_of_fuel: 'Fuel exhausted. Run ended.', traffic_unavailable: `Run ended: ${payload.message}`, arrived_portofino: 'Arrived at Portofino Marina, CA'}[type] || String(type).replaceAll('_', ' '));
@@ -84,7 +122,7 @@
     const copilotSelect = document.getElementById('copilot-control'), driver = state.drivers.find(item => item.role === 'driver'), copilot = state.driver_copilot ? driver : state.drivers.find(item => item.role === 'copilot'), otherAvailable = state.drivers.some(item => item.id !== driver?.id && !item.locked_rest && item.fatigue < 100); if (document.activeElement !== copilotSelect) { copilotSelect.innerHTML = '<option value="">None</option>' + state.drivers.map(item => { const driverUnavailable = item.id === driver?.id && state.drivers.length > 1 && otherAvailable; return `<option value="${escape(item.id)}" ${copilot && copilot.id === item.id ? 'selected' : ''} ${item.locked_rest || driverUnavailable ? 'disabled' : ''}>${escape(item.name)} | ${item.fatigue.toFixed(0)}%</option>`; }).join(''); }
     const ended = ['completed', 'failed'].includes(simulation.status), decisionPending = ['event', 'confirmation'].includes(state.pending_decision?.type), pause = document.getElementById('pause-action'); pause.textContent = simulation.status === 'paused' && !decisionPending ? 'Resume' : 'Pause'; pause.disabled = ended || decisionPending || !['running', 'paused'].includes(simulation.status); document.getElementById('driver-action').disabled = simulation.status !== 'running' || decisionPending || state.drivers.length < 2; document.getElementById('fuel-action').disabled = simulation.status !== 'running' || decisionPending;
     const summary = document.getElementById('simulation-summary'); summary.hidden = !ended;
-    if (ended) { if (document.getElementById('simulation-decision').open) document.getElementById('simulation-decision').close(); document.getElementById('summary-time').textContent = duration(elapsed); document.getElementById('summary-average').textContent = elapsed > 0 ? `${(vehicle.distance_miles / (elapsed / 3600)).toFixed(1)} mph` : '0.0 mph'; document.getElementById('summary-distance').textContent = `${vehicle.distance_miles.toFixed(1)} mi`; document.getElementById('summary-stops').textContent = duration(vehicle.stopped_seconds); document.getElementById('summary-fuel').textContent = `${vehicle.fuel.toFixed(1)} gal`; document.getElementById('summary-reason').textContent = state.failure_reason || state.end_reason || (simulation.status === 'completed' ? 'The crew reached Portofino Marina, CA.' : 'The run ended before reaching Portofino Marina.'); document.getElementById('summary-route').textContent = (state.route || []).map(routeName).join(' / '); } else renderDecision(state, simulation.status);
+    if (ended) { if (document.getElementById('simulation-decision').open) document.getElementById('simulation-decision').close(); document.getElementById('summary-time').textContent = duration(elapsed); document.getElementById('summary-average').textContent = elapsed > 0 ? `${(vehicle.distance_miles / (elapsed / 3600)).toFixed(1)} mph` : '0.0 mph'; document.getElementById('summary-distance').textContent = `${vehicle.distance_miles.toFixed(1)} mi`; document.getElementById('summary-stops').textContent = duration(vehicle.stopped_seconds); document.getElementById('summary-fuel').textContent = `${vehicle.fuel.toFixed(1)} gal`; document.getElementById('summary-reason').textContent = state.failure_reason || state.end_reason || (simulation.status === 'completed' ? 'The crew reached Portofino Marina, CA.' : 'The run ended before reaching Portofino Marina.'); document.getElementById('summary-route').textContent = (state.route || []).map(routeName).join(' / '); drawSummaryMap(state); } else renderDecision(state, simulation.status);
   }
 
   async function act(action, payload = {}) { errorNode.hidden = true; const body = new URLSearchParams({_token: config.csrf, action, ...payload}); try { const response = await fetch(`/simulator/${config.id}/action`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body}); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Action failed'); await refresh(); } catch (error) { errorNode.dataset.source = 'action'; errorNode.textContent = error.message; errorNode.hidden = false; } }

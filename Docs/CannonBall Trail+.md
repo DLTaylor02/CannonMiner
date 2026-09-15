@@ -23,6 +23,13 @@ the vehicle. A driver reaching 100% fatigue is locked into rest until reaching
 teammate requires rest, at twice the normal driving fatigue rate. Runs can be
 paused and resumed without keeping the browser open.
 
+The live map reuses overview polylines already stored by the collector and does
+not make additional Google requests. Untraveled geometry is gray. Traveled
+geometry is colored from red at zero speed to green at the target speed, and
+the final summary joins the stored polylines for every segment traveled. Fuel
+stops, driver changes, police encounters, flat tires, road obstacles, and each
+weather condition are retained as distinct symbols on both maps.
+
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
 for the affected segment. Weather is independent of crew skill and applies a
 segment speed cap: fog 45 mph, rain 80 mph, ice 35 mph, or snow 65 mph. Road
