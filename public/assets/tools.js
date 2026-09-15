@@ -63,7 +63,7 @@
   const scale = document.querySelector('.heatmap-scale');
   const heatmapError = output('heatmap-error');
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  let cells = [], request, timer;
+  let cells = [], request, timer, pageLeaving = false;
   const loading = label => `<p class="tool-loading"><img class="queue-spinner" src="/assets/refresh.webp" width="24" height="24" alt="">${label}</p>`;
   const duration = seconds => {
     const minutes = Math.round(seconds / 60);
@@ -106,7 +106,7 @@
       if (!response.ok) throw new Error(payload.error || 'Unable to calculate the heatmap.');
       cells = payload.cells || []; renderHeatmap();
     } catch (error) {
-      if (error.name === 'AbortError') return;
+      if (error.name === 'AbortError' || pageLeaving) return;
       heatmap.innerHTML = ''; heatmapError.textContent = error.message; heatmapError.hidden = false;
     }
   };
@@ -119,6 +119,9 @@
   [...routeControls, ...speedControls].forEach(control => {
     control.addEventListener(control.matches('select') ? 'change' : 'input', () => synchronize(control));
   });
+  const leave = () => { pageLeaving = true;clearTimeout(timer);request?.abort(); };
+  window.addEventListener('beforeunload',leave,{once:true});
+  window.addEventListener('pagehide',leave,{once:true});
   metric.addEventListener('change', renderHeatmap);
   calculate();
   loadHeatmap();

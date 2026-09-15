@@ -211,6 +211,7 @@ $app->get('/tools',function(Request $request,Response $response)use($router,$set
     return $render($request,$response,'tools.twig',['routes'=>$routes,'selected_route'=>$selected,'target_speed'=>$speed,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/tools/heatmap',function(Request $request,Response $response)use($router,$settings):Response{
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $routes=$router->calculatorRoutes();$query=$request->getQueryParams();$label=(string)($query['route']??'');
     $selected=null;foreach($routes as $route)if(hash_equals($route['label'],$label)){$selected=$route;break;}
     if(!$selected){$response->getBody()->write(json_encode(['error'=>'Select an available route.'],JSON_THROW_ON_ERROR));return$response->withStatus(400)->withHeader('Content-Type','application/json');}
