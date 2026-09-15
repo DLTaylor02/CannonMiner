@@ -217,10 +217,10 @@ $app->map(['GET','POST'],'/plan',function(Request $request,Response $response)us
         ORDER BY speed
     SQL);
     $speeds=array_map('floatval',array_column($speedStatement->fetchAll(),'speed'));
-    $today=new DateTimeImmutable('today',new DateTimeZone('America/New_York'));
+    $today=new DateTimeImmutable('today',new DateTimeZone('America/New_York'));$nextYear=(int)$today->format('Y')+1;
     $defaultSpeed=(float)$settings->get('default_speed_mph','110');
     if($speeds&&!in_array($defaultSpeed,$speeds,true))$defaultSpeed=$speeds[0];
-    $input=['start_date'=>$today->format('Y-m-d'),'end_date'=>$today->modify('+90 days')->format('Y-m-d'),'hour_start'=>0,'hour_end'=>23,
+    $input=['start_date'=>$nextYear.'-01-01','end_date'=>$nextYear.'-12-31','hour_start'=>0,'hour_end'=>23,
         'speed'=>$defaultSpeed,'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];$error=null;
     if($request->getMethod()==='POST'){
         $csrf($request);$input=array_merge($input,(array)$request->getParsedBody());if($identity['role']==='user')$input['risk']=100*(float)$settings->get('default_max_delay_risk','.20');
@@ -244,7 +244,7 @@ $app->get('/plan/{id}',function(Request $request,Response $response,array $args)
     return$render($request,$response,'planning.twig',['job'=>$job,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/plan/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
-    $statement=$pdo->prepare(<<<'SQL'
+    $statement=$pdo->prepare(<<<SQL
         SELECT j.status,j.progress_current,j.progress_total,j.stage,j.updated_at,j.error,j.result,
           CASE WHEN j.status='queued' THEN (SELECT count(*) FROM planning_jobs q WHERE q.status='queued' AND (q.created_at,q.id)<=(j.created_at,j.id))::int END AS queue_position,
           CASE WHEN j.status='queued' THEN (SELECT count(*) FROM planning_jobs q WHERE q.status='queued')::int END AS queue_total
@@ -265,10 +265,19 @@ $app->get('/plan/{id}/status',function(Request $request,Response $response,array
 })->add($guard);
 
 $app->get('/run-windows',function(Request $request,Response $response)use($pdo,$render):Response{
-    $perPage=20;$totalStatement=$pdo->prepare('SELECT count(*) FROM planning_jobs WHERE planning_method_version=?');
-    $totalStatement->execute([Planner::METHOD_VERSION]);$total=(int)$totalStatement->fetchColumn();
+    $query=$request->getQueryParams();$users=$pdo->prepare('SELECT DISTINCT u.id,u.username FROM users u JOIN planning_jobs j ON j.user_id=u.id WHERE j.planning_method_version=? ORDER BY u.username');$users->execute([Planner::METHOD_VERSION]);$users=$users->fetchAll();
+    $userId=max(0,(int)($query['user']??0));if($userId&&!in_array($userId,array_map(static fn(array $user):int=>(int)$user['id'],$users),true))$userId=0;
+    $speedStatement=$pdo->prepare("SELECT DISTINCT round((input->>'speed')::numeric,1)::float AS speed FROM planning_jobs WHERE planning_method_version=? ORDER BY speed");$speedStatement->execute([Planner::METHOD_VERSION]);$speeds=array_map('floatval',array_column($speedStatement->fetchAll(),'speed'));
+    $selectedSpeed=(string)($query['speed']??'all');if($selectedSpeed!=='all'){$requested=round((float)$selectedSpeed,1);$match=null;foreach($speeds as $speed)if(abs($speed-$requested)<.05){$match=$speed;break;}$selectedSpeed=$match===null?'all':number_format($match,1,'.','');}
+    $from=(string)($query['from']??'');$to=(string)($query['to']??'');$validDate=static fn(string $date):bool=>$date===''||(($parsed=DateTimeImmutable::createFromFormat('!Y-m-d',$date))&&$parsed->format('Y-m-d')===$date);if(!$validDate($from))$from='';if(!$validDate($to))$to='';
+    $conditions=['j.planning_method_version=?'];$parameters=[Planner::METHOD_VERSION];
+    if($userId){$conditions[]='j.user_id=?';$parameters[]=$userId;}if($selectedSpeed!=='all'){$conditions[]="round((j.input->>'speed')::numeric,1)=?";$parameters[]=(float)$selectedSpeed;}
+    if($from!==''){$conditions[]="((j.result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date>=?::date";$parameters[]=$from;}
+    if($to!==''){$conditions[]="((j.result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York')::date<=?::date";$parameters[]=$to;}
+    $where=' WHERE '.implode(' AND ',$conditions);$perPage=20;$totalStatement=$pdo->prepare('SELECT count(*) FROM planning_jobs j'.$where);
+    $totalStatement->execute($parameters);$total=(int)$totalStatement->fetchColumn();
     $totalPages=max(1,(int)ceil($total/$perPage));$page=max(1,min($totalPages,(int)($request->getQueryParams()['page']??1)));$offset=($page-1)*$perPage;
-    $statement=$pdo->prepare(<<<'SQL'
+    $statement=$pdo->prepare(<<<SQL
         SELECT j.id,j.user_id,u.username,j.status,j.stage,j.created_at,
           j.input->>'start_date' AS start_date,j.input->>'end_date' AS end_date,
           j.input->>'profile' AS profile,(j.input->>'speed')::numeric AS target_speed_mph,
@@ -277,10 +286,10 @@ $app->get('/run-windows',function(Request $request,Response $response)use($pdo,$
           CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN (j.result->0->>'risk')::numeric END AS risk,
           CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN (j.result->0->>'confidence')::numeric END AS confidence
         FROM planning_jobs j JOIN users u ON u.id=j.user_id
-        WHERE j.planning_method_version=? ORDER BY j.created_at DESC,j.id DESC LIMIT ? OFFSET ?
+        {$where} ORDER BY j.created_at DESC,j.id DESC LIMIT ? OFFSET ?
     SQL);
-    $statement->execute([Planner::METHOD_VERSION,$perPage,$offset]);
-    return$render($request,$response,'run-windows.twig',['windows'=>$statement->fetchAll(),'page'=>$page,'total_pages'=>$totalPages,'total'=>$total,'csrf'=>$_SESSION['csrf']]);
+    $statement->execute([...$parameters,$perPage,$offset]);
+    return$render($request,$response,'run-windows.twig',['windows'=>$statement->fetchAll(),'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'from'=>$from,'to'=>$to,'page'=>$page,'total_pages'=>$totalPages,'total'=>$total,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{
@@ -356,10 +365,14 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     $selectedSpeed=$speeds[0];foreach($speeds as $speed)if(abs($speed-$requestedSpeed)<.05){$selectedSpeed=$speed;break;}
     $timezone=new DateTimeZone('America/New_York');$currentYear=(int)(new DateTimeImmutable('now',$timezone))->format('Y');
     $years=array_map('intval',array_column($pdo->query(<<<'SQL'
-        SELECT DISTINCT extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
-        FROM analysis_jobs
-        WHERE calculation_method_version=3 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0
-          AND result->0->>'departure' IS NOT NULL ORDER BY year DESC
+        SELECT DISTINCT year FROM (
+          SELECT extract(year FROM ((result->0->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
+          FROM analysis_jobs WHERE calculation_method_version=3 AND status='complete' AND jsonb_typeof(result)='array' AND jsonb_array_length(result)>0 AND result->0->>'departure' IS NOT NULL
+          UNION ALL
+          SELECT extract(year FROM ((item->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int AS year
+          FROM planning_jobs CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(result)='array' THEN result ELSE '[]'::jsonb END) AS item
+          WHERE planning_method_version=1 AND status='complete' AND item->>'departure' IS NOT NULL
+        ) available_years ORDER BY year DESC
     SQL)->fetchAll(),'year'));
     if(!in_array($currentYear,$years,true))$years[]=$currentYear;rsort($years);
     $requestedYear=(int)($request->getQueryParams()['year']??$currentYear);$selectedYear=in_array($requestedYear,$years,true)?$requestedYear:$currentYear;
@@ -391,6 +404,22 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
         $recommendationCounts[$row['day']]=($recommendationCounts[$row['day']]??0)+$recommendations;
         $time=DateTimeImmutable::createFromFormat('!H:i',(string)$row['departure_time'],$timezone);
         $departures[$row['day']][]=['time'=>$row['departure_time'],'label'=>$time?$time->format('g:i A'):$row['departure_time'],'count'=>$recommendations,'points'=>$points,'run_id'=>$row['latest_id']];
+    }
+    $projectionStatement=$pdo->prepare(<<<'SQL'
+        SELECT j.id,item.value->>'route' AS route,item.value->>'departure' AS departure,
+          (item.value->>'risk')::float AS risk,(item.value->>'confidence')::float AS confidence,
+          (item.value->>'expected_seconds')::float AS expected_seconds,item.value->>'designation' AS designation
+        FROM planning_jobs j
+        CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(j.result)='array' THEN j.result ELSE '[]'::jsonb END) WITH ORDINALITY AS item(value,position)
+        WHERE j.planning_method_version=? AND j.status='complete'
+          AND extract(year FROM ((item.value->>'departure')::timestamptz AT TIME ZONE 'America/New_York'))::int=?
+          AND round((item.value->>'target_speed_mph')::numeric,1)=CAST(? AS numeric)
+        ORDER BY (item.value->>'departure')::timestamptz,j.created_at DESC,item.position
+    SQL);
+    $projectionStatement->execute([Planner::METHOD_VERSION,$selectedYear,$selectedSpeed]);$projections=[];
+    foreach($projectionStatement->fetchAll() as $row){$departure=(new DateTimeImmutable((string)$row['departure']))->setTimezone($timezone);$day=$departure->format('Y-m-d');
+        $projections[$day][]=['id'=>$row['id'],'route'=>$row['route'],'departure'=>$row['departure'],'departure_label'=>$departure->format('g:i A T'),
+            'risk'=>(float)$row['risk'],'confidence'=>(float)$row['confidence'],'expected_seconds'=>(float)$row['expected_seconds'],'designation'=>$row['designation']];
     }
     $trendRows=$pdo->query(<<<'SQL'
         WITH observed AS (
@@ -429,7 +458,7 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
             $dayTrends=$trends[$pattern]??[];$green=null;$trendColor=null;$dark=false;
             if($count>0){$intensity=$maximum>0?$count/$maximum:0;$from=[222,241,230];$to=[23,107,77];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$green='rgb('.implode(',',$rgb).')';$dark=$intensity>=.55;}
             if($dayTrends){$intensity=$maximumTrend>0?max(array_column($dayTrends,'severity'))/$maximumTrend:0;$from=[255,194,188];$to=[181,59,50];$rgb=[];foreach($from as $index=>$value)$rgb[]=(int)round($value+($to[$index]-$value)*$intensity);$trendColor='rgb('.implode(',',$rgb).')';}
-            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'recommendations'=>$recommendationCounts[$date]??0,'color'=>$green,'trend_color'=>$trendColor,'dark'=>$dark,'departures'=>$departures[$date]??[],'trends'=>$dayTrends,'holidays'=>$holidays[$date]??[]];
+            $days[]=['number'=>$day,'date'=>$date,'count'=>$count,'recommendations'=>$recommendationCounts[$date]??0,'color'=>$green,'trend_color'=>$trendColor,'dark'=>$dark,'departures'=>$departures[$date]??[],'projections'=>$projections[$date]??[],'trends'=>$dayTrends,'holidays'=>$holidays[$date]??[]];
         }
         $months[]=['name'=>$start->format('F'),'offset'=>(int)$start->format('N')-1,'days'=>$days];
     }
@@ -551,6 +580,7 @@ $app->post('/segments',function(Request $request,Response $response)use($pdo,$cs
 $app->map(['GET','POST'], '/settings', function (Request $request, Response $response) use ($pdo,$settings,$render,$csrf,&$identity): Response {
     $message = null;
     if ($request->getMethod() === 'POST') {
+        if(!in_array($identity['role'],['admin','superadmin'],true))return$response->withStatus(403);
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
         if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','cruising_fuel_rate_gpm','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
@@ -584,7 +614,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     $values['cruising_fuel_rate_gpm']??='5';
     $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
-})->add($requireAdmin)->add($guard);
+})->add($guard);
 
 $app->map(['GET','POST'],'/users',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,$passwordPolicy,&$identity):Response{
     $message=$error=$warning=null;
