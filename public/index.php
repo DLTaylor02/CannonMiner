@@ -193,7 +193,8 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
     return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'dashboard_banner'=>$dashboardBanner,'last_collection'=>$lastCollection,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
-$app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
+$loadHistory=null;
+$app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity,&$loadHistory): Response {
     $nodes = $router->nodes(); $input = ['start'=>'redball','end'=>'portofino','speed'=>(float)$settings->get('default_speed_mph','110'),
         'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];
     $routes=$router->routeOptions();$results = []; $error = null;
@@ -203,17 +204,18 @@ $app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Respon
         $token=(string)($input['_token']??'');if(!hash_equals($_SESSION['csrf']??'',$token))throw new RuntimeException('Your session expired.');
         $jobType=($input['_mode']??'best')==='custom'?'custom':'best';$segments=null;
         if($jobType==='custom'){$selected=$routes[(int)($input['route_index']??-1)]??null;if(!$selected){$error='Select an available custom route.';}else{$input['start']=$selected['start'];$input['end']=$selected['end'];$segments=$selected['segments'];}}
-        if($error)return $render($request,$response,'dashboard.twig',['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+        if($error)return $render($request,$response,'dashboard.twig',array_merge(['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'error'=>$error,'csrf'=>$_SESSION['csrf']],$loadHistory($request)));
         $id=bin2hex(random_bytes(16));
         $statement=$pdo->prepare("INSERT INTO analysis_jobs(id,user_id,status,input,job_type,calculation_method_version) VALUES (?,?,'queued',?::jsonb,?,3)");
         $payload=['start'=>$input['start'],'end'=>$input['end'],'speed'=>(float)$input['speed'],'profile'=>$input['profile'],'risk'=>max(0,min(1,(float)$input['risk']/100))];if($segments!==null)$payload['segments']=$segments;
         $statement->execute([$id,$_SESSION['user_id'],json_encode($payload,JSON_THROW_ON_ERROR),$jobType]);
         return $response->withHeader('Location','/analysis/'.$id)->withStatus(302);
     }
-    return $render($request, $response, 'dashboard.twig', ['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+    return $render($request, $response, 'dashboard.twig', array_merge(['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']],$loadHistory($request)));
 })->add($guard);
 
-$app->map(['GET','POST'],'/plan',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,&$identity):Response{
+$loadWindows=null;
+$app->map(['GET','POST'],'/plan',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,&$identity,&$loadWindows):Response{
     $speedStatement=$pdo->query(<<<'SQL'
         SELECT DISTINCT round(((item.value->>'target_speed_mph')::numeric)*10)::int/10.0 AS speed
         FROM analysis_jobs j
@@ -244,7 +246,7 @@ $app->map(['GET','POST'],'/plan',function(Request $request,Response $response)us
             $id=bin2hex(random_bytes(16));$pdo->prepare("INSERT INTO planning_jobs(id,user_id,status,input,planning_method_version) VALUES (?,?,'queued',?::jsonb,?)")->execute([$id,$identity['id'],json_encode($payload,JSON_THROW_ON_ERROR),Planner::METHOD_VERSION]);return$response->withHeader('Location','/plan/'.$id)->withStatus(302);
         }
     }
-    return$render($request,$response,'plan.twig',['input'=>$input,'speeds'=>$speeds,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+    return$render($request,$response,'plan.twig',array_merge(['input'=>$input,'planning_speeds'=>$speeds,'error'=>$error,'csrf'=>$_SESSION['csrf']],$loadWindows($request)));
 })->add($guard);
 $app->get('/plan/{id}',function(Request $request,Response $response,array $args)use($pdo,$render):Response{
     $statement=$pdo->prepare('SELECT * FROM planning_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return$response->withStatus(404);
@@ -271,7 +273,7 @@ $app->get('/plan/{id}/status',function(Request $request,Response $response,array
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
-$app->get('/run-windows',function(Request $request,Response $response)use($pdo,$render):Response{
+$loadWindows=function(Request $request)use($pdo):array{
     $query=$request->getQueryParams();$users=$pdo->prepare('SELECT DISTINCT u.id,u.username FROM users u JOIN planning_jobs j ON j.user_id=u.id WHERE j.planning_method_version=? ORDER BY u.username');$users->execute([Planner::METHOD_VERSION]);$users=$users->fetchAll();
     $userId=max(0,(int)($query['user']??0));if($userId&&!in_array($userId,array_map(static fn(array $user):int=>(int)$user['id'],$users),true))$userId=0;
     $speedStatement=$pdo->prepare("SELECT DISTINCT round((input->>'speed')::numeric,1)::float AS speed FROM planning_jobs WHERE planning_method_version=? ORDER BY speed");$speedStatement->execute([Planner::METHOD_VERSION]);$speeds=array_map('floatval',array_column($speedStatement->fetchAll(),'speed'));
@@ -296,15 +298,15 @@ $app->get('/run-windows',function(Request $request,Response $response)use($pdo,$
         {$where} ORDER BY j.created_at DESC,j.id DESC LIMIT ? OFFSET ?
     SQL);
     $statement->execute([...$parameters,$perPage,$offset]);
-    return$render($request,$response,'run-windows.twig',['windows'=>$statement->fetchAll(),'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'from'=>$from,'to'=>$to,'page'=>$page,'total_pages'=>$totalPages,'total'=>$total,'csrf'=>$_SESSION['csrf']]);
-})->add($guard);
+    return['windows'=>$statement->fetchAll(),'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'from'=>$from,'to'=>$to,'page'=>$page,'total_pages'=>$totalPages,'total'=>$total];
+};
 $app->post('/run-windows/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);$id=(string)$args['id'];
     if(preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',$id)){
         if(in_array($identity['role'],['admin','superadmin'],true)){$statement=$pdo->prepare('DELETE FROM planning_jobs WHERE id=?');$statement->execute([$id]);}
         else{$statement=$pdo->prepare('DELETE FROM planning_jobs WHERE id=? AND user_id=?');$statement->execute([$id,$identity['id']]);if($statement->rowCount()===0)return$response->withStatus(403);}
     }
-    return$response->withHeader('Location','/run-windows')->withStatus(302);
+    return$response->withHeader('Location','/plan')->withStatus(302);
 })->add($guard);
 
 $app->get('/simulator',function(Request $request,Response $response)use($pdo,$render,&$identity):Response{
@@ -522,7 +524,7 @@ $app->get('/calendar',function(Request $request,Response $response)use($pdo,$set
     return $render($request,$response,'calendar.twig',['months'=>$months,'speeds'=>$speeds,'years'=>$years,'selected_speed'=>$selectedSpeed,'selected_year'=>$selectedYear,'maximum'=>$maximum,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
-$app->get('/history',function(Request $request,Response $response)use($pdo,$render):Response{
+$loadHistory=function(Request $request)use($pdo):array{
     $query=$request->getQueryParams();$filter=(string)($query['type']??'all');if(!in_array($filter,['all','best','custom','automated'],true))$filter='all';
     $sort=(string)($query['sort']??'risk');if(!in_array($sort,['risk','expected','run','matches'],true))$sort='risk';
     $descendingDefault=in_array($sort,['run','matches'],true);
@@ -607,8 +609,8 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     SQL;
     if($pageSize!==null)$historySql.=" LIMIT {$pageSize} OFFSET {$offset}";
     $statement=$pdo->prepare($historySql);$statement->execute($parameters);$runs=$statement->fetchAll();
-    return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'sort'=>$sort,'direction'=>$direction,'grouped'=>$grouped,'per_page'=>$perPage,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
-})->add($guard);
+    return['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'sort'=>$sort,'direction'=>$direction,'grouped'=>$grouped,'per_page'=>$perPage,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns];
+};
 $app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);
     if(preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id'])){
@@ -619,7 +621,7 @@ $app->post('/history/{id}/delete',function(Request $request,Response $response,a
             if($statement->rowCount()===0)return$response->withStatus(403);
         }
     }
-    return $response->withHeader('Location','/history')->withStatus(302);
+    return $response->withHeader('Location','/analyze-traffic')->withStatus(302);
 })->add($guard);
 $app->post('/segments/{id}/toggle', function (Request $request, Response $response, array $args) use ($pdo,$csrf): Response {
     $csrf($request); $statement=$pdo->prepare('UPDATE segments SET enabled=NOT enabled WHERE id=?');
