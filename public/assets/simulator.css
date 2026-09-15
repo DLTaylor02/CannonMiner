@@ -52,11 +52,15 @@ header .theme-form{margin-left:auto}
 .simulation-controls,.simulation-log{grid-column:1/-1}
 .simulation-controls form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:10px;margin-bottom:13px}
 .simulation-actions{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:13px}
+.simulation-controls>label:first-of-type{display:block;margin-bottom:14px}
 .control-note{color:var(--muted);font-size:12px}
 .simulation-crew #driver-cards{display:grid;gap:10px}
 .driver-card{padding:12px;border:1px solid var(--line);background:var(--paper)}
 .driver-card header{position:static;display:flex;justify-content:space-between;width:auto;min-height:0;padding:0;border:0;background:transparent}
 .driver-card small{color:var(--muted)}
+.driver-stats{display:grid;gap:4px;margin-top:8px}
+.driver-stats small{display:flex;justify-content:space-between;gap:10px}
+.driver-stats strong{color:var(--ink);font-variant-numeric:tabular-nums}
 .fatigue-track{height:8px;margin-top:9px;background:var(--line)}
 .fatigue-track i{display:block;height:100%;background:var(--green)}
 .simulation-log ol{max-height:420px;margin:0;padding:0;overflow:auto;list-style:none}
@@ -79,13 +83,14 @@ header .theme-form{margin-left:auto}
   .simulation-page .simulator-instruments{grid-column:9/13;grid-row:1}
   .simulation-page .instrument{min-height:0}
   .simulation-page .simulation-controls{grid-column:1/5;grid-row:2}
-  .simulation-page .simulation-crew{grid-column:5/9;grid-row:2}
+  .simulation-page .simulation-crew{grid-column:5/13;grid-row:2}
   .simulation-page .simulation-controls,.simulation-page .simulation-crew{min-height:0;padding:13px;overflow:auto}
   .simulation-page .section-heading{margin-bottom:10px;padding-bottom:8px}
   .simulation-page .section-heading h2{font-size:17px}
   .simulation-page .simulation-controls form,.simulation-page .simulation-actions{margin-bottom:8px}
   .simulation-page .simulation-controls input,.simulation-page .simulation-controls select,.simulation-page .simulation-controls button{height:36px}
   .simulation-page .driver-card{padding:8px}
+  .simulation-page .simulation-crew #driver-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
   .simulation-page .simulation-summary{position:absolute;inset:8%;z-index:4;grid-column:auto;grid-row:auto;box-shadow:0 18px 50px rgba(0,0,0,.35)}
   .simulation-page .simulation-log-below{margin-top:18px}
 }
