@@ -229,6 +229,7 @@ $app->get('/analysis/{id}',function(Request $request,Response $response,array $a
     return $render($request,$response,'analysis.twig',['job'=>$job,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/analysis/{id}/map/{rank}',function(Request $request,Response $response,array $args)use($pdo):Response{
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $statement=$pdo->prepare("SELECT result FROM analysis_jobs WHERE id=? AND status='complete'");$statement->execute([$args['id']]);
     $stored=$statement->fetchColumn();if($stored===false)return $response->withStatus(404);
     $results=json_decode((string)$stored,true);$rank=filter_var($args['rank'],FILTER_VALIDATE_INT);
