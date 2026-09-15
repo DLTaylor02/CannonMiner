@@ -125,25 +125,3 @@ calendar-pattern correction is projection method version 2.
 Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Historical Analysis, and Calendar display only calculations produced by the current method. The dynamically calibrated confidence calculation is method version 3.
 
 The Calendar uses green cell shading for recommendation points and a red top-left corner marker for recurring traffic conditions derived directly from measurements. The marker appears only when a segment-local month, weekday, and hour has at least two observations and its average delay exceeds the meaningful slowdown threshold. Its red intensity represents relative severity. A car icon marks days included in completed future projections without changing the historical point shading. Selecting a day shows its recommended departures, projected windows, and the affected segments, local times, delays, and sample counts.
-
-## CannonBall Trail+
-
-**CannonBall Trail+** is a saved, real-time route simulation built on
-CannonMiner's enabled segment graph and collected measurements. Start a run with
-a departure time, vehicle fuel economy and capacity, target speed, and up to two
-randomly generated teammates. The signed-in user is always part of the roster.
-Realtime mode advances one simulated minute per real minute; arcade mode
-advances one simulated hour per real minute.
-
-Past departures require a directly recorded observation near the time the
-vehicle enters each segment. Future departures use only directly supported
-month, weekday, and local-time evidence. The simulator does not call Google,
-create a Run Window, alter historical analysis, or invent values for unsupported
-traffic conditions.
-
-The simulator worker advances the saved clock and writes structured events for
-segment changes, delays, obstacles, fatigue, fuel stops, and completion. Branch
-choices appear only where the route graph has multiple valid paths toward
-Portofino. Driver and co-pilot fatigue rises according to role and endurance;
-rest becomes more effective over time. Changing the driver requires stopping
-the vehicle. Runs can be paused and resumed without keeping the browser open.

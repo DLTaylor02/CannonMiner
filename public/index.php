@@ -308,9 +308,16 @@ $app->post('/run-windows/{id}/delete',function(Request $request,Response $respon
 })->add($guard);
 
 $app->get('/simulator',function(Request $request,Response $response)use($pdo,$render,&$identity):Response{
-    $statement=$pdo->prepare("SELECT id,status,mode,departure_at,simulated_at,state,created_at FROM simulations WHERE user_id=? ORDER BY CASE WHEN status IN ('completed','failed') THEN 1 ELSE 0 END,updated_at DESC LIMIT 100");
-    $statement->execute([$identity['id']]);$simulations=$statement->fetchAll();foreach($simulations as &$simulation)$simulation['state']=json_decode((string)$simulation['state'],true);unset($simulation);
+    $admin=in_array($identity['role'],['admin','superadmin'],true);$sql="SELECT s.id,s.user_id,u.username,s.status,s.mode,s.departure_at,s.simulated_at,s.state,s.created_at FROM simulations s JOIN users u ON u.id=s.user_id".($admin?'':' WHERE s.user_id=?')." ORDER BY CASE WHEN s.status IN ('completed','failed') THEN 1 ELSE 0 END,s.updated_at DESC LIMIT 100";
+    $statement=$pdo->prepare($sql);$statement->execute($admin?[]:[$identity['id']]);$simulations=$statement->fetchAll();foreach($simulations as &$simulation){$simulation['state']=json_decode((string)$simulation['state'],true);$simulation['route_label']=implode(' / ',array_map([Simulator::class,'routeName'],$simulation['state']['route']??[]));}unset($simulation);
     return$render($request,$response,'simulator.twig',['simulations'=>$simulations,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->post('/simulator/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
+    $csrf($request);$id=(string)$args['id'];if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',$id))return$response->withStatus(404);
+    if(in_array($identity['role'],['admin','superadmin'],true)){$statement=$pdo->prepare('DELETE FROM simulations WHERE id=?');$statement->execute([$id]);}
+    else{$statement=$pdo->prepare('DELETE FROM simulations WHERE id=? AND user_id=?');$statement->execute([$id,$identity['id']]);if($statement->rowCount()===0)return$response->withStatus(403);}
+    return$response->withHeader('Location','/simulator')->withStatus(302);
 })->add($guard);
 
 $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $response)use($simulator,$render,$csrf,&$identity):Response{
