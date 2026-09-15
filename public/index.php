@@ -132,11 +132,10 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         ORDER BY avg_seconds,avg_risk
     SQL)->fetchAll();
     foreach($automated as &$route){
-        $recent=$route['recent_risk'];$previous=$route['previous_risk'];$route['risk_change_percent']=null;
+        $recent=$route['recent_risk'];$previous=$route['previous_risk'];$route['risk_change_points']=null;
         if($recent!==null&&$previous!==null){
             $recent=(float)$recent;$previous=(float)$previous;
-            if($previous>0)$route['risk_change_percent']=100*($recent-$previous)/$previous;
-            elseif($recent===0.0)$route['risk_change_percent']=0.0;
+            $route['risk_change_points']=100*($recent-$previous);
         }
     }
     unset($route);
