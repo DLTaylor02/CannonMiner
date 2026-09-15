@@ -64,11 +64,14 @@ final class Router
             foreach($adjacent[$node]??[] as $segment){
                 $next=(string)$segment['end_node'];if(in_array($next,$nodes,true))continue;
                 $nextNodes=[...$nodes,$next];$nextDistance=$distance+(float)$segment['distance_meters'];
-                $label=implode(' -> ',$nextNodes);$routes[$label]=['label'=>$label,'distance_miles'=>$nextDistance/self::METERS_PER_MILE];
+                if($next==='portofino'){
+                    $label=implode(' -> ',$nextNodes);$routes[$label]=['label'=>$label,'distance_miles'=>$nextDistance/self::METERS_PER_MILE];
+                    continue;
+                }
                 $walk($next,$nextNodes,$nextDistance);
             }
         };
-        foreach(array_keys($adjacent) as $start)$walk($start,[$start],0.0);
+        $walk('redball',['redball'],0.0);
         ksort($routes,SORT_NATURAL);return array_values($routes);
     }
 

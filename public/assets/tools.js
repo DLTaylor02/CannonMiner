@@ -12,7 +12,7 @@
     const distance = Number(option?.dataset.distance);
     const average = number('average'), capacity = number('capacity'), mpg = number('mpg');
     const flow = 8, payment = 2;
-    const acceleration = number('acceleration'), deceleration = number('deceleration');
+    const acceleration = 5, deceleration = 5;
     const values = [distance, average, capacity, mpg, flow, acceleration, deceleration];
     if (values.some(value => !Number.isFinite(value) || value <= 0) || !Number.isFinite(payment) || payment < 0) {
       output('cruise-speed').textContent = 'Enter valid inputs';
