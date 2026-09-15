@@ -31,9 +31,10 @@ final class Simulator
         $departureText=(string)($input['departure']??'');$departure=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',$departureText,new \DateTimeZone('America/New_York'));
         if(!$departure||$departure->format('Y-m-d\TH:i')!==$departureText)throw new RuntimeException('Choose a valid departure date and time.');
         $capacity=max(1,min(100,(float)($input['capacity']??20)));$mpg=max(1,min(100,(float)($input['mpg']??20)));$speed=max(20,min(250,(float)($input['speed']??110)));
-        $selected=array_map('strval',(array)($input['drivers']??[]));$drivers=[];
-        foreach($roster as $candidate)if($candidate['required']||in_array($candidate['id'],$selected,true))$drivers[]=$candidate+['role'=>$candidate['required']?'driver':'rest','fatigue'=>0.0,'rest_seconds'=>0.0];
+        $selected=array_map('strval',(array)($input['drivers']??[]));$initialDriver=(string)($input['initial_driver']??'self');$drivers=[];
+        foreach($roster as $candidate)if($candidate['required']||in_array($candidate['id'],$selected,true))$drivers[]=$candidate+['role'=>$candidate['id']===$initialDriver?'driver':'rest','fatigue'=>0.0,'rest_seconds'=>0.0];
         if(count($drivers)>3)throw new RuntimeException('Choose no more than two additional drivers.');
+        if(!in_array($initialDriver,array_column($drivers,'id'),true))throw new RuntimeException('Choose an initial driver from the selected roster.');
         $seed=random_int(1,2147483647);$choices=$this->choicePayload('redball');if(!$choices)throw new RuntimeException('No supported route begins at Red Ball.');
         $state=['node'=>'redball','route'=>[],'choices'=>$choices,'current_segment'=>null,'drivers'=>$drivers,
             'vehicle'=>['capacity'=>$capacity,'fuel'=>$capacity,'mpg'=>$mpg,'target_speed'=>$speed,'current_speed'=>0.0,'distance_miles'=>0.0,'stopped_seconds'=>0.0],

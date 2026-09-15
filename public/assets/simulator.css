@@ -64,3 +64,29 @@ header .theme-form{margin-left:auto}
 .simulation-clock time{color:var(--muted);font-size:12px}
 @media(max-width:850px){.simulation-grid{grid-template-columns:1fr}.simulation-controls,.simulation-log{grid-column:auto}.driver-roster{grid-template-columns:1fr}}
 @media(max-width:560px){.simulation-row{display:grid}.simulation-row>div:last-child{text-align:left}.simulator-head{align-items:flex-start}.simulation-controls #role-control{grid-template-columns:1fr}.simulation-log li{grid-template-columns:88px 1fr}}
+
+@media(min-width:951px){
+  body.simulation-page{min-height:100vh;overflow-x:hidden}
+  .simulation-page main{max-width:none;height:auto;padding:10px 18px 14px;overflow:visible}
+  .simulation-page .simulator-head{height:66px;margin:0 0 10px;padding:0 0 10px;align-items:center}
+  .simulation-page .simulator-head h1{font-size:28px}
+  .simulation-page .simulator-head small{color:var(--muted);font-size:11px}
+  .simulation-page .simulation-grid{position:relative;height:calc(100vh - 164px);grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:minmax(0,1.08fr) minmax(0,.92fr);gap:12px}
+  .simulation-page .simulator-map-panel{grid-column:1/9;grid-row:1}
+  .simulation-page .simulator-map-panel canvas{width:100%;height:100%;aspect-ratio:auto}
+  .simulation-page .simulator-instruments{grid-column:9/13;grid-row:1}
+  .simulation-page .instrument{min-height:0}
+  .simulation-page .simulation-controls{grid-column:1/5;grid-row:2}
+  .simulation-page .simulation-crew{grid-column:5/9;grid-row:2}
+  .simulation-page .simulation-controls,.simulation-page .simulation-crew{min-height:0;padding:13px;overflow:auto}
+  .simulation-page .section-heading{margin-bottom:10px;padding-bottom:8px}
+  .simulation-page .section-heading h2{font-size:17px}
+  .simulation-page .simulation-controls form,.simulation-page .simulation-actions,.simulation-page .route-choices{margin-bottom:8px}
+  .simulation-page .simulation-controls input,.simulation-page .simulation-controls select,.simulation-page .simulation-controls button{height:36px}
+  .simulation-page .driver-card{padding:8px}
+  .simulation-page .simulation-summary{position:absolute;inset:8%;z-index:4;grid-column:auto;grid-row:auto;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  .simulation-page .simulation-log-below{margin-top:18px}
+}
+@media(max-width:950px){
+  .simulation-page .simulator-head small{display:block;margin-top:6px;color:var(--muted)}
+}

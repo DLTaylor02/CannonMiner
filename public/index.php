@@ -322,13 +322,13 @@ $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $re
 })->add($guard);
 
 $app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
-    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     $statement=$pdo->prepare('SELECT id,status,mode,created_at FROM simulations WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
     return$render($request,$response,'simulation.twig',['simulation'=>$simulation,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/simulator/{id}/status',function(Request $request,Response $response,array $args)use($pdo,&$identity):Response{
-    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();$after=max(0,(int)($request->getQueryParams()['after']??0));
     $statement=$pdo->prepare('SELECT id,status,mode,departure_at,simulated_at,state,version,finished_at FROM simulations WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
     $simulation['state']=json_decode((string)$simulation['state'],true);$events=$pdo->prepare('SELECT id,simulated_at,type,payload FROM simulation_events WHERE simulation_id=? AND id>? ORDER BY id LIMIT 250');$events->execute([$args['id'],$after]);$simulation['events']=$events->fetchAll();foreach($simulation['events'] as &$event)$event['payload']=json_decode((string)$event['payload'],true);unset($event);
@@ -336,7 +336,7 @@ $app->get('/simulator/{id}/status',function(Request $request,Response $response,
 })->add($guard);
 
 $app->post('/simulator/{id}/action',function(Request $request,Response $response,array $args)use($simulator,$csrf,&$identity):Response{
-    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     try{$csrf($request);$body=(array)$request->getParsedBody();$simulator->act((string)$args['id'],(int)$identity['id'],(string)($body['action']??''),$body);$payload=['ok'=>true];}
     catch(Throwable $exception){$payload=['ok'=>false,'error'=>$exception->getMessage()];$response=$response->withStatus(422);}
     $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
