@@ -204,6 +204,13 @@ $app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Respon
     return $render($request, $response, 'dashboard.twig', ['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
+$app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{
+    $routes=$router->calculatorRoutes();$query=$request->getQueryParams();$selected=(string)($query['route']??'');
+    if(!in_array($selected,array_column($routes,'label'),true))$selected=(string)($routes[0]['label']??'');
+    $speed=max(1,min(500,(float)($query['speed']??$settings->get('default_speed_mph','110'))));
+    return $render($request,$response,'tools.twig',['routes'=>$routes,'selected_route'=>$selected,'target_speed'=>$speed,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
     $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();
     if(!$job)return $response->withStatus(404);

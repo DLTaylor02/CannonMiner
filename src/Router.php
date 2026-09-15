@@ -48,6 +48,30 @@ final class Router
         return $routes;
     }
 
+    public function calculatorRoutes(): array
+    {
+        $rows=$this->pdo->query(<<<'SQL'
+            SELECT s.name,s.start_node,s.end_node,
+              percentile_cont(.5) WITHIN GROUP (ORDER BY m.distance_meters)::float AS distance_meters
+            FROM segments s JOIN measurements m ON m.segment_id=s.id
+            WHERE s.enabled AND m.distance_meters>0
+            GROUP BY s.id,s.name,s.start_node,s.end_node
+            ORDER BY s.name
+        SQL)->fetchAll();
+        $adjacent=[];foreach($rows as $row)$adjacent[$row['start_node']][]=$row;
+        $routes=[];
+        $walk=function(string $node,array $nodes,float $distance)use(&$walk,&$routes,$adjacent):void{
+            foreach($adjacent[$node]??[] as $segment){
+                $next=(string)$segment['end_node'];if(in_array($next,$nodes,true))continue;
+                $nextNodes=[...$nodes,$next];$nextDistance=$distance+(float)$segment['distance_meters'];
+                $label=implode(' -> ',$nextNodes);$routes[$label]=['label'=>$label,'distance_miles'=>$nextDistance/self::METERS_PER_MILE];
+                $walk($next,$nextNodes,$nextDistance);
+            }
+        };
+        foreach(array_keys($adjacent) as $start)$walk($start,[$start],0.0);
+        ksort($routes,SORT_NATURAL);return array_values($routes);
+    }
+
     public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null, ?array $fixedSegments = null): array
     {
         if ($mph <= 0 || $maxRisk < 0 || $maxRisk > 1 || !in_array($profile, ['balanced','fastest','reliability'], true)) {
