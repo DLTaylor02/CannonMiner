@@ -392,7 +392,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $groupDiscriminator=$grouped?'CASE WHEN comparable THEN NULL ELSE id END':'id';
     $historyCte=<<<SQL
         WITH history_source AS (
-          SELECT j.id,u.username,j.status,j.stage,j.created_at,j.job_type,j.input->>'profile' AS profile,
+          SELECT j.id,j.user_id,u.username,j.status,j.stage,j.created_at,j.job_type,j.input->>'profile' AS profile,
             result_item.item <> 'null'::jsonb AS comparable,
             (result_item.position-1)::int AS result_index,
             CASE WHEN result_item.item <> 'null'::jsonb THEN CASE result_item.position
@@ -414,6 +414,7 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
           ) WITH ORDINALITY AS result_item(item,position) ON true{$where}
         ), grouped_history AS (
           SELECT (array_agg(id ORDER BY created_at DESC,id DESC))[1] AS id,
+            (array_agg(user_id ORDER BY created_at DESC,id DESC))[1] AS user_id,
             (array_agg(username ORDER BY created_at DESC,id DESC))[1] AS username,
             (array_agg(status ORDER BY created_at DESC,id DESC))[1] AS status,
             (array_agg(stage ORDER BY created_at DESC,id DESC))[1] AS stage,
@@ -442,13 +443,18 @@ $app->get('/history',function(Request $request,Response $response)use($pdo,$rend
     $statement=$pdo->prepare($historySql);$statement->execute($parameters);$runs=$statement->fetchAll();
     return $render($request,$response,'history.twig',['runs'=>$runs,'filter'=>$filter,'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'sort'=>$sort,'direction'=>$direction,'grouped'=>$grouped,'per_page'=>$perPage,'page'=>$page,'total_pages'=>$totalPages,'total_runs'=>$totalRuns,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
-$app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
+$app->post('/history/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);
     if(preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id'])){
-        $statement=$pdo->prepare('DELETE FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);
+        if(in_array($identity['role'],['admin','superadmin'],true)){
+            $statement=$pdo->prepare('DELETE FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);
+        }else{
+            $statement=$pdo->prepare('DELETE FROM analysis_jobs WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);
+            if($statement->rowCount()===0)return$response->withStatus(403);
+        }
     }
     return $response->withHeader('Location','/history')->withStatus(302);
-})->add($requireAdmin)->add($guard);
+})->add($guard);
 $app->get('/trends', fn(Request $q, Response $r): Response => $render($q,$r,'trends.twig',['trends'=>$router->trends(),'csrf'=>$_SESSION['csrf']]))->add($guard);
 $app->post('/segments/{id}/toggle', function (Request $request, Response $response, array $args) use ($pdo,$csrf): Response {
     $csrf($request); $statement=$pdo->prepare('UPDATE segments SET enabled=NOT enabled WHERE id=?');
