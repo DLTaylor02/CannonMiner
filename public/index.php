@@ -455,7 +455,6 @@ $app->post('/history/{id}/delete',function(Request $request,Response $response,a
     }
     return $response->withHeader('Location','/history')->withStatus(302);
 })->add($guard);
-$app->get('/trends', fn(Request $q, Response $r): Response => $render($q,$r,'trends.twig',['trends'=>$router->trends(),'csrf'=>$_SESSION['csrf']]))->add($guard);
 $app->post('/segments/{id}/toggle', function (Request $request, Response $response, array $args) use ($pdo,$csrf): Response {
     $csrf($request); $statement=$pdo->prepare('UPDATE segments SET enabled=NOT enabled WHERE id=?');
     $statement->execute([(int)$args['id']]); return $response->withHeader('Location','/settings')->withStatus(302);
