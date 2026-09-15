@@ -104,7 +104,8 @@ Confidence is separate from risk. CannonMiner repeatedly resamples the existing 
 rerun simulations, alter historical results, or substitute assumed segment data.
 It finds recurring month, weekday, departure-time, route, and target-speed
 patterns in current-method completed calculations, then maps only those directly
-supported patterns onto dates in the selected future range. Equivalent displayed
+supported patterns onto dates in the selected future range. The full day is
+considered in 15-minute departure increments. Equivalent displayed
 results count as repeated matches but contribute one evidence group, preventing
 frequent automation from manufacturing confidence.
 

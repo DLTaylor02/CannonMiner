@@ -182,7 +182,11 @@ $app->get('/',function(Request $request,Response $response)use($pdo,$settings,$r
         'forecast_end'=>(new DateTimeImmutable((string)$forecastEnd))->format(DATE_ATOM),
         'reconstructed_requests'=>(int)($apiActual[array_key_last($apiActual)]['reconstructed_requests']??0)];
     $dashboardBanner=trim((string)$settings->get('dashboard_banner',''));
-    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'dashboard_banner'=>$dashboardBanner,'csrf'=>$_SESSION['csrf']]);
+    $lastCollection=$pdo->query(<<<'SQL'
+        SELECT status,segments_collected,message,to_char(coalesce(finished_at,started_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_at_iso
+        FROM collection_runs ORDER BY started_at DESC LIMIT 1
+    SQL)->fetch();
+    return $render($request,$response,'home.twig',['summary'=>$summary,'automated'=>$automated,'metrics'=>$metrics,'storage_metrics'=>$storageMetrics,'api_usage'=>$apiUsage,'dashboard_banner'=>$dashboardBanner,'last_collection'=>$lastCollection,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Response $response) use ($pdo,$router,$settings,$render,&$identity): Response {
@@ -220,7 +224,7 @@ $app->map(['GET','POST'],'/plan',function(Request $request,Response $response)us
     $today=new DateTimeImmutable('today',new DateTimeZone('America/New_York'));$nextYear=(int)$today->format('Y')+1;
     $defaultSpeed=(float)$settings->get('default_speed_mph','110');
     if($speeds&&!in_array($defaultSpeed,$speeds,true))$defaultSpeed=$speeds[0];
-    $input=['start_date'=>$nextYear.'-01-01','end_date'=>$nextYear.'-12-31','hour_start'=>0,'hour_end'=>23,
+    $input=['start_date'=>$nextYear.'-01-01','end_date'=>$nextYear.'-12-31',
         'speed'=>$defaultSpeed,'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];$error=null;
     if($request->getMethod()==='POST'){
         $csrf($request);$input=array_merge($input,(array)$request->getParsedBody());if($identity['role']==='user')$input['risk']=100*(float)$settings->get('default_max_delay_risk','.20');
@@ -230,11 +234,10 @@ $app->map(['GET','POST'],'/plan',function(Request $request,Response $response)us
         elseif(!in_array($input['profile'],['balanced','fastest','reliability'],true))$error='Select a valid strategy.';
         elseif(!in_array((float)$input['speed'],$speeds,true))$error='Select a target speed supported by current historical calculations.';
         else{
-            $payload=['start_date'=>$start->format('Y-m-d'),'end_date'=>$end->format('Y-m-d'),'hour_start'=>max(0,min(23,(int)$input['hour_start'])),
-                'hour_end'=>max(0,min(23,(int)$input['hour_end'])),'speed'=>max(1,min(250,(float)$input['speed'])),'profile'=>$input['profile'],
+            $payload=['start_date'=>$start->format('Y-m-d'),'end_date'=>$end->format('Y-m-d'),
+                'speed'=>max(1,min(250,(float)$input['speed'])),'profile'=>$input['profile'],
                 'risk'=>max(0,min(1,(float)$input['risk']/100))];
-            if($payload['hour_end']<$payload['hour_start'])$error='The ending departure hour must not be earlier than the starting hour.';
-            else{$id=bin2hex(random_bytes(16));$pdo->prepare("INSERT INTO planning_jobs(id,user_id,status,input,planning_method_version) VALUES (?,?,'queued',?::jsonb,?)")->execute([$id,$identity['id'],json_encode($payload,JSON_THROW_ON_ERROR),Planner::METHOD_VERSION]);return$response->withHeader('Location','/plan/'.$id)->withStatus(302);}
+            $id=bin2hex(random_bytes(16));$pdo->prepare("INSERT INTO planning_jobs(id,user_id,status,input,planning_method_version) VALUES (?,?,'queued',?::jsonb,?)")->execute([$id,$identity['id'],json_encode($payload,JSON_THROW_ON_ERROR),Planner::METHOD_VERSION]);return$response->withHeader('Location','/plan/'.$id)->withStatus(302);
         }
     }
     return$render($request,$response,'plan.twig',['input'=>$input,'speeds'=>$speeds,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
@@ -290,6 +293,14 @@ $app->get('/run-windows',function(Request $request,Response $response)use($pdo,$
     SQL);
     $statement->execute([...$parameters,$perPage,$offset]);
     return$render($request,$response,'run-windows.twig',['windows'=>$statement->fetchAll(),'users'=>$users,'selected_user'=>$userId,'speeds'=>$speeds,'selected_speed'=>$selectedSpeed,'from'=>$from,'to'=>$to,'page'=>$page,'total_pages'=>$totalPages,'total'=>$total,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+$app->post('/run-windows/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
+    $csrf($request);$id=(string)$args['id'];
+    if(preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',$id)){
+        if(in_array($identity['role'],['admin','superadmin'],true)){$statement=$pdo->prepare('DELETE FROM planning_jobs WHERE id=?');$statement->execute([$id]);}
+        else{$statement=$pdo->prepare('DELETE FROM planning_jobs WHERE id=? AND user_id=?');$statement->execute([$id,$identity['id']]);if($statement->rowCount()===0)return$response->withStatus(403);}
+    }
+    return$response->withHeader('Location','/run-windows')->withStatus(302);
 })->add($guard);
 
 $app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{
@@ -605,15 +616,11 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         }
         $settings->save($body);$message='Settings saved.';
     }
-    $lastRun=$pdo->query(<<<'SQL'
-        SELECT *,to_char(coalesce(finished_at,started_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS event_at_iso
-        FROM collection_runs ORDER BY started_at DESC LIMIT 1
-    SQL)->fetch();
     $values=$settings->all();
     if(!isset($values['automation_interval_minutes']))$values['automation_interval_minutes']=(string)(max(1,min(168,(int)($values['automation_interval_hours']??1)))*60);
     $values['cruising_fuel_rate_gpm']??='5';
     $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
-    return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'last_run'=>$lastRun,'message'=>$message,'csrf'=>$_SESSION['csrf']]);
+    return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->map(['GET','POST'],'/users',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,$passwordPolicy,&$identity):Response{
