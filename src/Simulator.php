@@ -39,7 +39,7 @@ final class Simulator
             'vehicle'=>['capacity'=>$capacity,'fuel'=>$capacity,'mpg'=>$mpg,'target_speed'=>$speed,'current_speed'=>0.0,'distance_miles'=>0.0,'stopped_seconds'=>0.0],
             'started'=>false,'traffic_mode'=>$departure<new DateTimeImmutable('now')?'recorded':'projected'];
         $id=bin2hex(random_bytes(16));$this->pdo->beginTransaction();
-        try{$this->pdo->prepare("INSERT INTO simulations(id,user_id,status,mode,departure_at,simulated_at,random_seed,state) VALUES (?,?,'awaiting_route',?,?,?,?::jsonb)")
+        try{$this->pdo->prepare("INSERT INTO simulations(id,user_id,status,mode,departure_at,simulated_at,random_seed,state) VALUES (?,?,'awaiting_route',?,?,?,?,?::jsonb)")
                 ->execute([$id,$userId,$mode,$departure->format(DATE_ATOM),$departure->format(DATE_ATOM),$seed,json_encode($state,JSON_THROW_ON_ERROR)]);
             $this->event($id,$departure,'simulation_created',['mode'=>$mode,'traffic_mode'=>$state['traffic_mode']]);$this->pdo->commit();return$id;
         }catch(\Throwable $error){$this->pdo->rollBack();throw$error;}
