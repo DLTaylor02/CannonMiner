@@ -68,6 +68,10 @@
     const minutes = Math.round(seconds / 60);
     return `${Math.floor(minutes / 60)} hr ${String(minutes % 60).padStart(2, '0')} min`;
   };
+  const compactDuration = seconds => {
+    const minutes = Math.round(seconds / 60);
+    return `${Math.floor(minutes / 60)}H ${String(minutes % 60).padStart(2, '0')}M`;
+  };
   const metricValue = cell => Number(cell[metric.value]);
   const metricLabel = cell => metric.value === 'risk'
     ? `${(metricValue(cell) * 100).toFixed(1)}% risk`
@@ -83,7 +87,7 @@
         if (!cell) { markup += '<span class="heatmap-cell empty" title="No directly supported observations">-</span>'; continue; }
         const normalized = spread > 0 ? (metricValue(cell) - low) / spread : 0;
         const hue = 120 * (1 - normalized);
-        markup += `<span class="heatmap-cell" style="--cell-color:hsl(${hue} 62% 42%);--cell-ink:${normalized > .58 ? '#fff' : '#111'}" title="${weekdays[weekday - 1]} ${String(hour).padStart(2, '0')}:00: ${metricLabel(cell)}; ${cell.samples} supported monthly pattern${cell.samples === 1 ? '' : 's'}">${metric.value === 'risk' ? `${Math.round(metricValue(cell) * 100)}%` : Math.round(metricValue(cell) / 60)}</span>`;
+        markup += `<span class="heatmap-cell" style="--cell-color:hsl(${hue} 62% 42%);--cell-ink:${normalized > .58 ? '#fff' : '#111'}" title="${weekdays[weekday - 1]} ${String(hour).padStart(2, '0')}:00: ${metricLabel(cell)}; ${cell.samples} supported monthly pattern${cell.samples === 1 ? '' : 's'}">${metric.value === 'risk' ? `${Math.round(metricValue(cell) * 100)}%` : compactDuration(metricValue(cell))}</span>`;
       }
     }
     heatmap.innerHTML = markup;
