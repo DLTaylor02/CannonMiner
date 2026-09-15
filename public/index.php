@@ -220,6 +220,13 @@ $app->get('/tools/heatmap',function(Request $request,Response $response)use($rou
     $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));
     return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
+$app->get('/tools/comparison',function(Request $request,Response $response)use($router,$settings):Response{
+    $speed=max(1,min(500,(float)($request->getQueryParams()['speed']??$settings->get('default_speed_mph','110'))));
+    try{$payload=['points'=>$router->routeComparison($router->calculatorRoutes(),$speed)];}
+    catch(Throwable $error){$payload=['error'=>$error->getMessage()];$response=$response->withStatus(422);}
+    $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));
+    return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
 
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
     $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();
