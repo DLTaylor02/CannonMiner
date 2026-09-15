@@ -80,6 +80,34 @@ CREATE INDEX IF NOT EXISTS planning_jobs_user_time_idx ON planning_jobs(user_id,
 CREATE INDEX IF NOT EXISTS planning_jobs_queue_idx ON planning_jobs(created_at,id) WHERE status='queued';
 ALTER TABLE planning_jobs ALTER COLUMN planning_method_version SET DEFAULT 2;
 
+CREATE TABLE IF NOT EXISTS simulations (
+    id UUID PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('awaiting_route','running','paused','awaiting_driver','completed','failed')),
+    mode TEXT NOT NULL CHECK (mode IN ('realtime','arcade')),
+    departure_at TIMESTAMPTZ NOT NULL,
+    simulated_at TIMESTAMPTZ NOT NULL,
+    random_seed BIGINT NOT NULL,
+    state JSONB NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1,
+    last_tick_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS simulations_user_time_idx ON simulations(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS simulations_active_idx ON simulations(last_tick_at,id) WHERE status IN ('running','awaiting_driver');
+
+CREATE TABLE IF NOT EXISTS simulation_events (
+    id BIGSERIAL PRIMARY KEY,
+    simulation_id UUID NOT NULL REFERENCES simulations(id) ON DELETE CASCADE,
+    simulated_at TIMESTAMPTZ NOT NULL,
+    type TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS simulation_events_simulation_idx ON simulation_events(simulation_id,id);
+
 CREATE TABLE IF NOT EXISTS system_metrics (
     id BIGSERIAL PRIMARY KEY,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),

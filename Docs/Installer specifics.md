@@ -27,15 +27,19 @@ The application runs under a non-login `cannonminer` system user. Setup creates
 a dedicated PHP-FPM pool at `/etc/php/<version>/fpm/pool.d/cannonminer.conf`, a
 socket at `/run/php/cannonminer.sock`, private sessions under
 `/var/lib/cannonminer/sessions`, a `cannonminer-worker.service` analysis worker,
-and a `cannonminer-plan-worker.service` projection worker. Nginx retains its normal account and can read only the public document
+a `cannonminer-plan-worker.service` projection worker, and a
+`cannonminer-simulator-worker.service` gameplay clock worker. Nginx retains its
+normal account and can read only the public document
 tree and FPM socket. The `.env`, application source, session files, and runtime
 data are not readable by other applications running as `www-data`.
 Nginx, PHP-FPM, collector, automation, and worker output use dedicated files
 under `/var/log/cannonminer`. Setup installs a daily logrotate policy retaining
 14 rotations and compressing older files. PostgreSQL logging remains shared
 with the PostgreSQL service.
-Upgrades restart the analysis worker: queued jobs are retained, while a job that
-was actively running during the restart is marked failed and can be run again.
+Upgrades restart the workers. Queued analysis and planning jobs are retained,
+while a calculation actively running during a restart is marked failed and can
+be run again. Simulator state is committed on each tick, so an active simulation
+resumes from its last saved state after its worker restarts.
 
 The 512 MB memory limit and unlimited execution/input timers are scoped to the
 CannonMiner FPM pool. Collector, diagnostic, password-reset, installer, and

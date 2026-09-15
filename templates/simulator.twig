@@ -1,0 +1,7 @@
+{% extends 'layout.twig' %}{% block title %}CannonBall Trail+ | CannonMiner{% endblock %}{% block content %}
+<section class="page-head simulator-head"><div><p class="kicker">Simulator mode</p><h1>CannonBall Trail+</h1></div><a class="simulator-primary" href="/simulator/new">Start new simulation</a></section>
+<section class="outlined-section"><div class="section-heading"><div><p class="kicker">Saved games</p><h2>Simulations</h2></div></div><div class="simulation-list">
+{% for simulation in simulations %}<a class="simulation-row" href="/simulator/{{ simulation.id }}"><div><strong>{{ simulation.state.route|length ? simulation.state.route|join(' / ') : 'Red Ball departure' }}</strong><span>{{ simulation.mode|title }} | {{ simulation.state.traffic_mode|title }} traffic</span></div><div><strong>{{ simulation.status|replace({'_':' '})|title }}</strong><time class="browser-time" datetime="{{ simulation.simulated_at|date('c') }}">{{ simulation.simulated_at|date('Y-m-d H:i T') }}</time></div></a>{% else %}<p class="simulator-empty">No simulations yet.</p>{% endfor %}
+</div></section>
+<script>const simulatorTime=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});document.querySelectorAll('.browser-time').forEach(item=>item.textContent=simulatorTime.format(new Date(item.dateTime)));</script>
+{% endblock %}

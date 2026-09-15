@@ -6,7 +6,10 @@ use CannonMiner\LoginRateLimiter;
 use CannonMiner\PasswordPolicy;
 use CannonMiner\Planner;
 use CannonMiner\Router;
+use CannonMiner\RouteGraph;
 use CannonMiner\Settings;
+use CannonMiner\SimulationTrafficProvider;
+use CannonMiner\Simulator;
 use GuzzleHttp\Client;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -17,6 +20,7 @@ use Slim\Views\TwigMiddleware;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 $root = dirname(__DIR__); $pdo = Database::connect($root); $settings = new Settings($pdo); $router = new Router($pdo, $settings);
+$simulator=new Simulator($pdo,new RouteGraph($pdo),new SimulationTrafficProvider($pdo),$settings);
 $remote=(string)($_SERVER['REMOTE_ADDR']??'');$trustedProxies=array_filter(array_map('trim',explode(',',(string)getenv('TRUSTED_PROXIES'))));
 $secureRequest=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')||(in_array($remote,$trustedProxies,true)&&strtolower(trim(explode(',',(string)($_SERVER['HTTP_X_FORWARDED_PROTO']??''))[0]))==='https');
 session_name('CannonMinerSession');
@@ -301,6 +305,41 @@ $app->post('/run-windows/{id}/delete',function(Request $request,Response $respon
         else{$statement=$pdo->prepare('DELETE FROM planning_jobs WHERE id=? AND user_id=?');$statement->execute([$id,$identity['id']]);if($statement->rowCount()===0)return$response->withStatus(403);}
     }
     return$response->withHeader('Location','/run-windows')->withStatus(302);
+})->add($guard);
+
+$app->get('/simulator',function(Request $request,Response $response)use($pdo,$render,&$identity):Response{
+    $statement=$pdo->prepare("SELECT id,status,mode,departure_at,simulated_at,state,created_at FROM simulations WHERE user_id=? ORDER BY CASE WHEN status IN ('completed','failed') THEN 1 ELSE 0 END,updated_at DESC LIMIT 100");
+    $statement->execute([$identity['id']]);$simulations=$statement->fetchAll();foreach($simulations as &$simulation)$simulation['state']=json_decode((string)$simulation['state'],true);unset($simulation);
+    return$render($request,$response,'simulator.twig',['simulations'=>$simulations,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $response)use($simulator,$render,$csrf,&$identity):Response{
+    if($request->getMethod()==='GET'&&(!isset($_SESSION['simulator_roster'])||isset($request->getQueryParams()['regenerate'])))$_SESSION['simulator_roster']=Simulator::roster($identity['username']);
+    $roster=(array)($_SESSION['simulator_roster']??Simulator::roster($identity['username']));$error=null;
+    if($request->getMethod()==='POST')try{$csrf($request);$id=$simulator->create((int)$identity['id'],(array)$request->getParsedBody(),$roster);unset($_SESSION['simulator_roster']);return$response->withHeader('Location','/simulator/'.$id)->withStatus(302);}catch(Throwable $exception){$error=$exception->getMessage();}
+    $defaultDeparture=(new DateTimeImmutable('tomorrow 06:00',new DateTimeZone('America/New_York')))->format('Y-m-d\TH:i');
+    return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
+    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    $statement=$pdo->prepare('SELECT id,status,mode,created_at FROM simulations WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
+    return$render($request,$response,'simulation.twig',['simulation'=>$simulation,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->get('/simulator/{id}/status',function(Request $request,Response $response,array $args)use($pdo,&$identity):Response{
+    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();$after=max(0,(int)($request->getQueryParams()['after']??0));
+    $statement=$pdo->prepare('SELECT id,status,mode,departure_at,simulated_at,state,version,finished_at FROM simulations WHERE id=? AND user_id=?');$statement->execute([$args['id'],$identity['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
+    $simulation['state']=json_decode((string)$simulation['state'],true);$events=$pdo->prepare('SELECT id,simulated_at,type,payload FROM simulation_events WHERE simulation_id=? AND id>? ORDER BY id LIMIT 250');$events->execute([$args['id'],$after]);$simulation['events']=$events->fetchAll();foreach($simulation['events'] as &$event)$event['payload']=json_decode((string)$event['payload'],true);unset($event);
+    $response->getBody()->write(json_encode($simulation,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
+
+$app->post('/simulator/{id}/action',function(Request $request,Response $response,array $args)use($simulator,$csrf,&$identity):Response{
+    if(!preg_match('/^[a-f0-9]{32}$/D',(string)$args['id']))return$response->withStatus(404);
+    try{$csrf($request);$body=(array)$request->getParsedBody();$simulator->act((string)$args['id'],(int)$identity['id'],(string)($body['action']??''),$body);$payload=['ok'=>true];}
+    catch(Throwable $exception){$payload=['ok'=>false,'error'=>$exception->getMessage()];$response=$response->withStatus(422);}
+    $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
 $app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{

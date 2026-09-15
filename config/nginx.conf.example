@@ -12,6 +12,9 @@ server {
     if ($request_uri ~ "^/plan/[0-9a-f-]+/status") {
         set $cannonminer_loggable 0;
     }
+    if ($request_uri ~ "^/simulator/[0-9a-f-]+/status") {
+        set $cannonminer_loggable 0;
+    }
     if ($request_uri = "/analysis-queue/status") {
         set $cannonminer_loggable 0;
     }

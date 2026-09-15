@@ -27,6 +27,7 @@ FILTERED_CRON_TMP=""
 FPM_POOL_TMP=""
 WORKER_SERVICE_TMP=""
 PLAN_WORKER_SERVICE_TMP=""
+SIMULATOR_WORKER_SERVICE_TMP=""
 LOGROTATE_TMP=""
 
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -39,6 +40,7 @@ cleanup() {
   [ -z "$FPM_POOL_TMP" ] || rm -f "$FPM_POOL_TMP"
   [ -z "$WORKER_SERVICE_TMP" ] || rm -f "$WORKER_SERVICE_TMP"
   [ -z "$PLAN_WORKER_SERVICE_TMP" ] || rm -f "$PLAN_WORKER_SERVICE_TMP"
+  [ -z "$SIMULATOR_WORKER_SERVICE_TMP" ] || rm -f "$SIMULATOR_WORKER_SERVICE_TMP"
   [ -z "$LOGROTATE_TMP" ] || rm -f "$LOGROTATE_TMP"
 }
 as_user() {
@@ -179,7 +181,7 @@ FPM_SOCKET="/run/php/cannonminer.sock"
 LOG_DIR="/var/log/cannonminer"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0700 "$SESSION_DIR"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$LOG_DIR"
-for LOG_FILE in php-error.log nginx-access.log nginx-error.log collector.log automation.log worker.log planner-worker.log; do
+for LOG_FILE in php-error.log nginx-access.log nginx-error.log collector.log automation.log worker.log planner-worker.log simulator-worker.log; do
   $SUDO touch "$LOG_DIR/$LOG_FILE"
   $SUDO chown "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$LOG_DIR/$LOG_FILE"
   $SUDO chmod 0640 "$LOG_DIR/$LOG_FILE"
@@ -408,6 +410,40 @@ $SUDO systemctl daemon-reload
 $SUDO systemctl enable cannonminer-plan-worker.service
 $SUDO systemctl restart cannonminer-plan-worker.service
 
+info "Installing simulator worker"
+SIMULATOR_WORKER_SERVICE_TMP="$(mktemp)"
+cat > "$SIMULATOR_WORKER_SERVICE_TMP" <<SERVICE
+[Unit]
+Description=CannonMiner simulator worker
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=$APP_SYSTEM_USER
+Group=$APP_SYSTEM_USER
+WorkingDirectory=$ROOT_DIR
+ExecStart=$(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 "$ROOT_DIR/bin/simulator-worker.php"
+Restart=always
+RestartSec=3
+StandardOutput=append:$LOG_DIR/simulator-worker.log
+StandardError=append:$LOG_DIR/simulator-worker.log
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+$SUDO install -m 0644 "$SIMULATOR_WORKER_SERVICE_TMP" /etc/systemd/system/cannonminer-simulator-worker.service
+rm -f "$SIMULATOR_WORKER_SERVICE_TMP"
+$SUDO systemd-analyze verify /etc/systemd/system/cannonminer-simulator-worker.service
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable cannonminer-simulator-worker.service
+$SUDO systemctl restart cannonminer-simulator-worker.service
+
 info "Installing scheduled collector"
   mkdir -p "$ROOT_DIR/var"
 as_user "$INSTALL_USER" composer licenses --format=json --no-dev > "$ROOT_DIR/var/composer-licenses.json"
@@ -436,6 +472,7 @@ $SUDO systemctl is-active --quiet postgresql || fail "PostgreSQL is not running.
 $SUDO systemctl is-active --quiet "$PHP_FPM_SERVICE" || fail "PHP-FPM is not running."
 $SUDO systemctl is-active --quiet cannonminer-worker.service || fail "CannonMiner analysis worker is not running."
 $SUDO systemctl is-active --quiet cannonminer-plan-worker.service || fail "CannonMiner planning worker is not running."
+$SUDO systemctl is-active --quiet cannonminer-simulator-worker.service || fail "CannonMiner simulator worker is not running."
 $SUDO systemctl is-active --quiet nginx || fail "Nginx is not running."
 $SUDO systemctl is-active --quiet cron || fail "cron is not running."
 
