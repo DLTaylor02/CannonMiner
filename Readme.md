@@ -1,5 +1,9 @@
 # CannonMiner
 
+Historical traffic analysis is available under **Analyze Traffic**. **Plan the
+Run** projects supported current-version analysis results onto future dates
+without changing or rerunning the historical scoring model.
+
 CannonMiner is a PHP 8.2 web application for comparing routes and recurring
 departure windows against historical traffic-delay observations. It includes
 authentication, route maps, database-backed configuration, scheduled
@@ -93,6 +97,23 @@ Exactly three supported combinations are displayed. The first is the highest-ran
 Calculated Runs treats the Recommended, Day alternative, and Route/time alternative positions as independently groupable results. Selecting a history entry opens that specific result from the most recent calculation in its match group.
 
 Confidence is separate from risk. CannonMiner repeatedly resamples the existing simulation outcomes to measure how often a candidate remains in the top three. Evidence coverage reaches 50% when the least-supported segment has the median sample count among the candidates being compared. The displayed confidence is the geometric mean of ranking stability and evidence coverage. Repeating an identical automated calculation does not add calendar evidence: only the latest equivalent calculation contributes. Calendar points are `confidence x (1 - risk)`, and all three results can contribute.
+
+## Future planning
+
+**Plan the Run** is a separate projection layer. It does not collect traffic,
+rerun simulations, alter historical results, or substitute assumed segment data.
+It finds recurring month, weekday, departure-time, route, and target-speed
+patterns in current-method completed calculations, then maps only those directly
+supported patterns onto dates in the selected future range. Equivalent displayed
+results count as repeated matches but contribute one evidence group, preventing
+frequent automation from manufacturing confidence.
+
+Projected time and risk are based on the median of the supporting evidence, and
+the likely upper duration is its 90th percentile. Projection confidence combines
+the historical confidence, number of distinct evidence groups, agreement between
+them, and age of the latest evidence. The page returns up to three choices,
+includes the latest supporting calculation and a cruising-speed calculator link,
+and provides a **Print** button for paper or PDF output.
 
 Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Calculated Runs, and Calendar display only calculations produced by the current method. The dynamically calibrated confidence calculation is method version 3.
 

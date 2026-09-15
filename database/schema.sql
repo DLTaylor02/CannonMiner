@@ -60,6 +60,25 @@ CREATE INDEX IF NOT EXISTS analysis_jobs_user_time_idx ON analysis_jobs(user_id,
 CREATE INDEX IF NOT EXISTS analysis_jobs_queue_idx ON analysis_jobs(created_at,id) WHERE status='queued';
 CREATE INDEX IF NOT EXISTS analysis_jobs_method_time_idx ON analysis_jobs(calculation_method_version,created_at DESC);
 
+CREATE TABLE IF NOT EXISTS planning_jobs (
+    id UUID PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('queued','running','complete','failed')),
+    input JSONB NOT NULL,
+    progress_current INTEGER NOT NULL DEFAULT 0,
+    progress_total INTEGER NOT NULL DEFAULT 4,
+    stage TEXT NOT NULL DEFAULT 'Queued',
+    result JSONB,
+    error TEXT,
+    planning_method_version SMALLINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS planning_jobs_user_time_idx ON planning_jobs(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS planning_jobs_queue_idx ON planning_jobs(created_at,id) WHERE status='queued';
+
 CREATE TABLE IF NOT EXISTS system_metrics (
     id BIGSERIAL PRIMARY KEY,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),

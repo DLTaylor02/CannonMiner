@@ -4,6 +4,7 @@ declare(strict_types=1);
 use CannonMiner\Database;
 use CannonMiner\LoginRateLimiter;
 use CannonMiner\PasswordPolicy;
+use CannonMiner\Planner;
 use CannonMiner\Router;
 use CannonMiner\Settings;
 use GuzzleHttp\Client;
@@ -202,6 +203,55 @@ $app->map(['GET','POST'], '/analyze-traffic', function (Request $request, Respon
         return $response->withHeader('Location','/analysis/'.$id)->withStatus(302);
     }
     return $render($request, $response, 'dashboard.twig', ['nodes'=>$nodes,'routes'=>$routes,'input'=>$input,'results'=>$results,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+
+$app->map(['GET','POST'],'/plan',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,&$identity):Response{
+    $speedStatement=$pdo->query(<<<'SQL'
+        SELECT DISTINCT round(((item.value->>'target_speed_mph')::numeric)*10)::int/10.0 AS speed
+        FROM analysis_jobs j
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(j.result)='array' THEN j.result ELSE '[]'::jsonb END
+        ) AS item(value)
+        WHERE j.status='complete' AND j.calculation_method_version=3
+          AND item.value->>'target_speed_mph' IS NOT NULL
+        ORDER BY speed
+    SQL);
+    $speeds=array_map('floatval',array_column($speedStatement->fetchAll(),'speed'));
+    $today=new DateTimeImmutable('today',new DateTimeZone('America/New_York'));
+    $defaultSpeed=(float)$settings->get('default_speed_mph','110');
+    if($speeds&&!in_array($defaultSpeed,$speeds,true))$defaultSpeed=$speeds[0];
+    $input=['start_date'=>$today->format('Y-m-d'),'end_date'=>$today->modify('+90 days')->format('Y-m-d'),'hour_start'=>0,'hour_end'=>23,
+        'speed'=>$defaultSpeed,'profile'=>'balanced','risk'=>100*(float)$settings->get('default_max_delay_risk','.20')];$error=null;
+    if($request->getMethod()==='POST'){
+        $csrf($request);$input=array_merge($input,(array)$request->getParsedBody());if($identity['role']==='user')$input['risk']=100*(float)$settings->get('default_max_delay_risk','.20');
+        $start=DateTimeImmutable::createFromFormat('!Y-m-d',(string)$input['start_date'],new DateTimeZone('America/New_York'));
+        $end=DateTimeImmutable::createFromFormat('!Y-m-d',(string)$input['end_date'],new DateTimeZone('America/New_York'));
+        if(!$start||!$end||$start->format('Y-m-d')!==(string)$input['start_date']||$end->format('Y-m-d')!==(string)$input['end_date']||$start<$today||$end<$start||$end->diff($start)->days>366)$error='Choose a future planning range of no more than one year.';
+        elseif(!in_array($input['profile'],['balanced','fastest','reliability'],true))$error='Select a valid strategy.';
+        elseif(!in_array((float)$input['speed'],$speeds,true))$error='Select a target speed supported by current historical calculations.';
+        else{
+            $payload=['start_date'=>$start->format('Y-m-d'),'end_date'=>$end->format('Y-m-d'),'hour_start'=>max(0,min(23,(int)$input['hour_start'])),
+                'hour_end'=>max(0,min(23,(int)$input['hour_end'])),'speed'=>max(1,min(250,(float)$input['speed'])),'profile'=>$input['profile'],
+                'risk'=>max(0,min(1,(float)$input['risk']/100))];
+            if($payload['hour_end']<$payload['hour_start'])$error='The ending departure hour must not be earlier than the starting hour.';
+            else{$id=bin2hex(random_bytes(16));$pdo->prepare("INSERT INTO planning_jobs(id,user_id,status,input,planning_method_version) VALUES (?,?,'queued',?::jsonb,?)")->execute([$id,$identity['id'],json_encode($payload,JSON_THROW_ON_ERROR),Planner::METHOD_VERSION]);return$response->withHeader('Location','/plan/'.$id)->withStatus(302);}
+        }
+    }
+    return$render($request,$response,'plan.twig',['input'=>$input,'speeds'=>$speeds,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+$app->get('/plan/{id}',function(Request $request,Response $response,array $args)use($pdo,$render):Response{
+    $statement=$pdo->prepare('SELECT * FROM planning_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return$response->withStatus(404);
+    return$render($request,$response,'planning.twig',['job'=>$job,'csrf'=>$_SESSION['csrf']]);
+})->add($guard);
+$app->get('/plan/{id}/status',function(Request $request,Response $response,array $args)use($pdo):Response{
+    $statement=$pdo->prepare(<<<'SQL'
+        SELECT j.status,j.progress_current,j.progress_total,j.stage,j.updated_at,j.error,j.result,
+          CASE WHEN j.status='queued' THEN (SELECT count(*) FROM planning_jobs q WHERE q.status='queued' AND (q.created_at,q.id)<=(j.created_at,j.id))::int END AS queue_position,
+          CASE WHEN j.status='queued' THEN (SELECT count(*) FROM planning_jobs q WHERE q.status='queued')::int END AS queue_total
+        FROM planning_jobs j WHERE j.id=?
+    SQL);
+    $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return$response->withStatus(404);$job['updated_at']=(new DateTimeImmutable($job['updated_at']))->format(DATE_ATOM);
+    $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 
 $app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{

@@ -46,7 +46,7 @@ try {
     require $root . '/vendor/autoload.php';
     $pdo = CannonMiner\Database::connect($root);
     if ((int) $pdo->query('SELECT 1')->fetchColumn() !== 1) throw new RuntimeException('Database connectivity check failed');
-    $tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','system_metrics','storage_metrics','google_api_requests'];
+    $tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','planning_jobs','system_metrics','storage_metrics','google_api_requests'];
     $statement = $pdo->prepare('SELECT to_regclass(?) IS NOT NULL');
     foreach ($tables as $table) {
         $statement->execute(['public.' . $table]);

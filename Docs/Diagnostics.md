@@ -35,8 +35,10 @@ Inspect the isolated runtime services with:
 
 ```bash
 systemctl status cannonminer-worker.service
+systemctl status cannonminer-plan-worker.service
 systemctl status php$(php -r 'echo PHP_MAJOR_VERSION,".",PHP_MINOR_VERSION;')-fpm.service
 sudo tail -n 100 /var/log/cannonminer/worker.log
+sudo tail -n 100 /var/log/cannonminer/planner-worker.log
 ```
 
 All application-specific logs are stored under `/var/log/cannonminer`:
@@ -46,6 +48,7 @@ All application-specific logs are stored under `/var/log/cannonminer`:
 - `collector.log`: successful collections and collection failures
 - `automation.log`: queued automation batches and automation failures
 - `worker.log`: analysis-worker failures
+- `planner-worker.log`: future-projection worker failures
 
 Routine scheduled checks that have no work to perform are silent, and the
 one-second analysis progress poll is omitted from Nginx access logging. Logs

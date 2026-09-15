@@ -26,8 +26,8 @@ other application's server block.
 The application runs under a non-login `cannonminer` system user. Setup creates
 a dedicated PHP-FPM pool at `/etc/php/<version>/fpm/pool.d/cannonminer.conf`, a
 socket at `/run/php/cannonminer.sock`, private sessions under
-`/var/lib/cannonminer/sessions`, and a `cannonminer-worker.service` analysis
-worker. Nginx retains its normal account and can read only the public document
+`/var/lib/cannonminer/sessions`, a `cannonminer-worker.service` analysis worker,
+and a `cannonminer-plan-worker.service` projection worker. Nginx retains its normal account and can read only the public document
 tree and FPM socket. The `.env`, application source, session files, and runtime
 data are not readable by other applications running as `www-data`.
 Nginx, PHP-FPM, collector, automation, and worker output use dedicated files
