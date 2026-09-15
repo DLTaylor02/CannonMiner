@@ -2,6 +2,8 @@
   const form = document.getElementById('cruise-calculator');
   if (!form) return;
   const output = id => document.getElementById(id);
+  const routeControls = [...document.querySelectorAll('[data-shared-route]')];
+  const speedControls = [...document.querySelectorAll('[data-shared-speed]')];
   const number = name => Number(form.elements[name].value);
   const time = hours => {
     const minutes = Math.max(0, Math.round(hours * 60));
@@ -55,5 +57,63 @@
   };
   form.addEventListener('input', calculate);
   form.addEventListener('change', calculate);
+
+  const heatmap = output('departure-heatmap');
+  const metric = output('heatmap-metric');
+  const scale = document.querySelector('.heatmap-scale');
+  const heatmapError = output('heatmap-error');
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let cells = [], request, timer;
+  const duration = seconds => {
+    const minutes = Math.round(seconds / 60);
+    return `${Math.floor(minutes / 60)} hr ${String(minutes % 60).padStart(2, '0')} min`;
+  };
+  const metricValue = cell => Number(cell[metric.value]);
+  const metricLabel = cell => metric.value === 'risk'
+    ? `${(metricValue(cell) * 100).toFixed(1)}% risk`
+    : `${duration(metricValue(cell))} ${metric.value === 'p90_seconds' ? '90th percentile' : 'expected'}`;
+  const renderHeatmap = () => {
+    const values = cells.map(metricValue).filter(Number.isFinite);
+    const low = Math.min(...values), high = Math.max(...values), spread = high - low;
+    let markup = '<span class="heatmap-corner">Hour</span>' + weekdays.map(day => `<strong class="heatmap-day">${day}</strong>`).join('');
+    for (let hour = 0; hour < 24; hour++) {
+      markup += `<strong class="heatmap-hour">${String(hour).padStart(2, '0')}:00</strong>`;
+      for (let weekday = 1; weekday <= 7; weekday++) {
+        const cell = cells.find(item => Number(item.weekday) === weekday && Number(item.hour) === hour);
+        if (!cell) { markup += '<span class="heatmap-cell empty" title="No directly supported observations">-</span>'; continue; }
+        const normalized = spread > 0 ? (metricValue(cell) - low) / spread : 0;
+        const hue = 120 * (1 - normalized);
+        markup += `<span class="heatmap-cell" style="--cell-color:hsl(${hue} 62% 42%);--cell-ink:${normalized > .58 ? '#fff' : '#111'}" title="${weekdays[weekday - 1]} ${String(hour).padStart(2, '0')}:00: ${metricLabel(cell)}; ${cell.samples} supported monthly pattern${cell.samples === 1 ? '' : 's'}">${metric.value === 'risk' ? `${Math.round(metricValue(cell) * 100)}%` : Math.round(metricValue(cell) / 60)}</span>`;
+      }
+    }
+    heatmap.innerHTML = markup;
+    scale.hidden = values.length === 0;
+  };
+  const loadHeatmap = async () => {
+    request?.abort(); request = new AbortController();
+    heatmap.innerHTML = '<p class="heatmap-loading">Calculating supported departure windows...</p>';
+    heatmapError.hidden = true; scale.hidden = true;
+    const route = routeControls[0].value, speed = Number(speedControls[0].value);
+    if (!route || !Number.isFinite(speed) || speed <= 0) return;
+    try {
+      const response = await fetch(`/tools/heatmap?route=${encodeURIComponent(route)}&speed=${encodeURIComponent(speed)}`, {signal: request.signal});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to calculate the heatmap.');
+      cells = payload.cells || []; renderHeatmap();
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      heatmap.innerHTML = ''; heatmapError.textContent = error.message; heatmapError.hidden = false;
+    }
+  };
+  const synchronize = source => {
+    const controls = source.matches('[data-shared-route]') ? routeControls : speedControls;
+    controls.forEach(control => { if (control !== source) control.value = source.value; });
+    calculate(); clearTimeout(timer); timer = setTimeout(loadHeatmap, source.matches('select') ? 0 : 450);
+  };
+  [...routeControls, ...speedControls].forEach(control => {
+    control.addEventListener(control.matches('select') ? 'change' : 'input', () => synchronize(control));
+  });
+  metric.addEventListener('change', renderHeatmap);
   calculate();
+  loadHeatmap();
 })();

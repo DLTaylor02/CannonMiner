@@ -60,19 +60,51 @@ final class Router
         SQL)->fetchAll();
         $adjacent=[];foreach($rows as $row)$adjacent[$row['start_node']][]=$row;
         $routes=[];
-        $walk=function(string $node,array $nodes,float $distance)use(&$walk,&$routes,$adjacent):void{
+        $walk=function(string $node,array $nodes,array $segmentNames,float $distance)use(&$walk,&$routes,$adjacent):void{
             foreach($adjacent[$node]??[] as $segment){
                 $next=(string)$segment['end_node'];if(in_array($next,$nodes,true))continue;
-                $nextNodes=[...$nodes,$next];$nextDistance=$distance+(float)$segment['distance_meters'];
+                $nextNodes=[...$nodes,$next];$nextSegments=[...$segmentNames,(string)$segment['name']];$nextDistance=$distance+(float)$segment['distance_meters'];
                 if($next==='portofino'){
-                    $label=implode(' -> ',$nextNodes);$routes[$label]=['label'=>$label,'distance_miles'=>$nextDistance/self::METERS_PER_MILE];
+                    $label=implode(' -> ',$nextNodes);$routes[$label]=['label'=>$label,'distance_miles'=>$nextDistance/self::METERS_PER_MILE,'segments'=>$nextSegments];
                     continue;
                 }
-                $walk($next,$nextNodes,$nextDistance);
+                $walk($next,$nextNodes,$nextSegments,$nextDistance);
             }
         };
-        $walk('redball',['redball'],0.0);
+        $walk('redball',['redball'],[],0.0);
         ksort($routes,SORT_NATURAL);return array_values($routes);
+    }
+
+    public function routeHeatmap(array $segmentNames,float $mph): array
+    {
+        if($mph<=0)throw new RuntimeException('Target speed must be greater than zero.');
+        $timezone=new DateTimeZone($this->settings->get('timezone','America/New_York'));
+        $this->representativeDates=[];$this->predictionCache=[];
+        $segments=$this->loadSegments($timezone,static function():void{});
+        $route=$this->fixedRoute($segments,'redball','portofino',$segmentNames)[0]??null;
+        if(!$route)throw new RuntimeException('The selected route is unavailable.');
+        $groups=[];
+        foreach($this->representativeDates as $date){
+            for($hour=0;$hour<24;$hour++){
+                $departure=$date->setTimezone($timezone)->setTime($hour,0);
+                $evaluation=$this->evaluate($route,$departure,$timezone,$mph,60);
+                if($evaluation===null)continue;
+                $key=$departure->format('N-G');
+                $groups[$key]??=['count'=>0,'expected'=>0.0,'risk'=>0.0,'durations'=>''];
+                $groups[$key]['count']++;$groups[$key]['expected']+=$evaluation['expected_seconds'];$groups[$key]['risk']+=$evaluation['risk'];
+                $groups[$key]['durations'].=pack('d*',...$evaluation['_simulation_seconds']);
+            }
+        }
+        $cells=[];
+        for($weekday=1;$weekday<=7;$weekday++)for($hour=0;$hour<24;$hour++){
+            $group=$groups[$weekday.'-'.$hour]??null;
+            if(!$group)continue;
+            $durations=$this->unpackDoubles($group['durations']);sort($durations,SORT_NUMERIC);
+            $cells[]=['weekday'=>$weekday,'hour'=>$hour,'samples'=>$group['count'],
+                'expected_seconds'=>$group['expected']/$group['count'],'risk'=>$group['risk']/$group['count'],
+                'p90_seconds'=>$durations[(int)floor(.9*(count($durations)-1))]];
+        }
+        return$cells;
     }
 
     public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null, ?array $fixedSegments = null): array

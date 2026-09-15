@@ -210,6 +210,16 @@ $app->get('/tools',function(Request $request,Response $response)use($router,$set
     $speed=max(1,min(500,(float)($query['speed']??$settings->get('default_speed_mph','110'))));
     return $render($request,$response,'tools.twig',['routes'=>$routes,'selected_route'=>$selected,'target_speed'=>$speed,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
+$app->get('/tools/heatmap',function(Request $request,Response $response)use($router,$settings):Response{
+    $routes=$router->calculatorRoutes();$query=$request->getQueryParams();$label=(string)($query['route']??'');
+    $selected=null;foreach($routes as $route)if(hash_equals($route['label'],$label)){$selected=$route;break;}
+    if(!$selected){$response->getBody()->write(json_encode(['error'=>'Select an available route.'],JSON_THROW_ON_ERROR));return$response->withStatus(400)->withHeader('Content-Type','application/json');}
+    $speed=max(1,min(500,(float)($query['speed']??$settings->get('default_speed_mph','110'))));
+    try{$payload=['cells'=>$router->routeHeatmap($selected['segments'],$speed)];}
+    catch(Throwable $error){$payload=['error'=>$error->getMessage()];$response=$response->withStatus(422);}
+    $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));
+    return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
 
 $app->get('/analysis/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
     $statement=$pdo->prepare('SELECT * FROM analysis_jobs WHERE id=?');$statement->execute([$args['id']]);$job=$statement->fetch();
