@@ -1,3 +1,8 @@
+`GET /health_check.php` is the silent monitoring endpoint. A healthy application
+returns an empty `200` response. Runtime, filesystem, session, logging, database,
+schema, or superadmin-invariant failures return an empty `503` response; the
+reason is written to `/var/log/cannonminer/php-error.log`.
+
 Run the installed-system test suite after setup or an upgrade:
 
 ```bash
