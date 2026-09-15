@@ -107,34 +107,6 @@ final class Router
         return$cells;
     }
 
-    public function routeComparison(array $routeOptions,float $mph): array
-    {
-        if($mph<=0)throw new RuntimeException('Target speed must be greater than zero.');
-        $timezone=new DateTimeZone($this->settings->get('timezone','America/New_York'));
-        $this->representativeDates=[];$this->predictionCache=[];
-        $segments=$this->loadSegments($timezone,static function():void{});$dates=[];
-        foreach($this->representativeDates as $date){$weekday=(int)$date->format('N');if(!isset($dates[$weekday])||$date>$dates[$weekday])$dates[$weekday]=$date;}
-        $points=[];
-        foreach($routeOptions as $option){
-            $route=$this->fixedRoute($segments,'redball','portofino',$option['segments'])[0]??null;
-            if(!$route)continue;$expected=$risk=$support=0.0;$windows=0;
-            foreach($dates as $date)for($hour=0;$hour<24;$hour++){
-                $evaluation=$this->evaluate($route,$date->setTimezone($timezone)->setTime($hour,0),$timezone,$mph,60);
-                if($evaluation===null)continue;
-                $expected+=$evaluation['expected_seconds'];$risk+=$evaluation['risk'];$support+=$evaluation['weakest_segment_observations'];$windows++;
-            }
-            if($windows)$points[]=['route'=>$option['label'],'expected_seconds'=>$expected/$windows,'risk'=>$risk/$windows,
-                'support'=>$support/$windows,'windows'=>$windows,'frontier'=>true];
-        }
-        $supports=array_column($points,'support');sort($supports,SORT_NUMERIC);$count=count($supports);
-        $middle=intdiv($count,2);$baseline=$count?($count%2?$supports[$middle]:($supports[$middle-1]+$supports[$middle])/2):1.0;$baseline=max(1.0,$baseline);
-        foreach($points as $index=>&$point){
-            $point['confidence']=$point['support']/($point['support']+$baseline);
-            foreach($points as $otherIndex=>$other)if($index!==$otherIndex&&$other['expected_seconds']<=$point['expected_seconds']&&$other['risk']<=$point['risk']&&($other['expected_seconds']<$point['expected_seconds']||$other['risk']<$point['risk'])){$point['frontier']=false;break;}
-        }
-        unset($point);usort($points,static fn(array $a,array $b):int=>[$a['expected_seconds'],$a['risk']]<=>[$b['expected_seconds'],$b['risk']]);return$points;
-    }
-
     public function explore(string $start, string $end, float $mph, string $profile, float $maxRisk, ?callable $progress = null, ?array $fixedSegments = null): array
     {
         if ($mph <= 0 || $maxRisk < 0 || $maxRisk > 1 || !in_array($profile, ['balanced','fastest','reliability'], true)) {
