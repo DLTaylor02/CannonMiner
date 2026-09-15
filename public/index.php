@@ -251,7 +251,36 @@ $app->get('/plan/{id}/status',function(Request $request,Response $response,array
         FROM planning_jobs j WHERE j.id=?
     SQL);
     $statement->execute([$args['id']]);$job=$statement->fetch();if(!$job)return$response->withStatus(404);$job['updated_at']=(new DateTimeImmutable($job['updated_at']))->format(DATE_ATOM);
+    if($job['result']!==null){
+        $results=is_array($job['result'])?$job['result']:json_decode((string)$job['result'],true);
+        $sourceStatement=$pdo->prepare("SELECT result FROM analysis_jobs WHERE id=? AND status='complete'");
+        if(is_array($results))foreach($results as &$item){
+            if(!empty($item['segment_risks'])||empty($item['source_id'])||!isset($item['source_index'],$item['departure']))continue;
+            $sourceStatement->execute([$item['source_id']]);$source=json_decode((string)$sourceStatement->fetchColumn(),true);$sourceResult=$source[(int)$item['source_index']]??null;
+            if(!is_array($sourceResult))continue;$departure=new DateTimeImmutable((string)$item['departure']);$item['segment_risks']=(array)($sourceResult['segment_risks']??[]);
+            foreach($item['segment_risks'] as &$segment){$offset=max(0,(int)($segment['start_offset_seconds']??0));$segment['start_time']=$departure->modify('+'.$offset.' seconds')->format(DATE_ATOM);}unset($segment);
+        }unset($item);$job['result']=$results;
+    }
     $response->getBody()->write(json_encode($job,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
+
+$app->get('/run-windows',function(Request $request,Response $response)use($pdo,$render):Response{
+    $perPage=20;$totalStatement=$pdo->prepare('SELECT count(*) FROM planning_jobs WHERE planning_method_version=?');
+    $totalStatement->execute([Planner::METHOD_VERSION]);$total=(int)$totalStatement->fetchColumn();
+    $totalPages=max(1,(int)ceil($total/$perPage));$page=max(1,min($totalPages,(int)($request->getQueryParams()['page']??1)));$offset=($page-1)*$perPage;
+    $statement=$pdo->prepare(<<<'SQL'
+        SELECT j.id,j.user_id,u.username,j.status,j.stage,j.created_at,
+          j.input->>'start_date' AS start_date,j.input->>'end_date' AS end_date,
+          j.input->>'profile' AS profile,(j.input->>'speed')::numeric AS target_speed_mph,
+          CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN j.result->0->>'route' END AS route,
+          CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN (j.result->0->>'departure')::timestamptz END AS departure,
+          CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN (j.result->0->>'risk')::numeric END AS risk,
+          CASE WHEN j.status='complete' AND jsonb_typeof(j.result)='array' AND jsonb_array_length(j.result)>0 THEN (j.result->0->>'confidence')::numeric END AS confidence
+        FROM planning_jobs j JOIN users u ON u.id=j.user_id
+        WHERE j.planning_method_version=? ORDER BY j.created_at DESC,j.id DESC LIMIT ? OFFSET ?
+    SQL);
+    $statement->execute([Planner::METHOD_VERSION,$perPage,$offset]);
+    return$render($request,$response,'run-windows.twig',['windows'=>$statement->fetchAll(),'page'=>$page,'total_pages'=>$totalPages,'total'=>$total,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/tools',function(Request $request,Response $response)use($router,$settings,$render):Response{

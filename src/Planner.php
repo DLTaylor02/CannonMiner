@@ -55,7 +55,7 @@ final class Planner
                 'time'=>$departure->setTimezone($timezone)->format('H:i'),'expected'=>(float)$result['expected_seconds'],
                 'risk'=>(float)$result['risk'],'confidence'=>(float)($result['confidence']??0),'matches'=>1,
                 'source_id'=>(string)$row['id'],'source_index'=>(int)$row['result_index'],'source_at'=>(string)$row['created_at'],
-                'map_available'=>!empty($result['map_url'])];
+                'map_available'=>!empty($result['map_url']),'segment_risks'=>(array)($result['segment_risks']??[])];
         }
         $progress(2, 4, 'Projecting supported patterns onto future dates');
         $candidates=[];$cursor=$start->setTime(0,0);
@@ -83,10 +83,25 @@ final class Planner
             $confidence=pow(max(0,$evidenceConfidence)*$support*$agreement*$recency,.25);
             $actualDeparture=new DateTimeImmutable(substr($candidateKey,strpos($candidateKey,'|')+1));
             $p90=$expected[(int)floor(.9*(count($expected)-1))];
+            $segmentEvidence=[];$segmentOrder=[];
+            foreach($evidence as $item)foreach($item['segment_risks'] as $segment){
+                $name=(string)($segment['name']??'');if($name==='')continue;
+                if(!isset($segmentEvidence[$name])){$segmentEvidence[$name]=[];$segmentOrder[]=$name;}
+                $segmentEvidence[$name][]=$segment;
+            }
+            $segmentRisks=[];
+            foreach($segmentOrder as $name){
+                $items=$segmentEvidence[$name];$segmentRiskValues=array_map(static fn(array $item):float=>(float)($item['risk']??0),$items);
+                $offsetValues=array_map(static fn(array $item):float=>(float)($item['start_offset_seconds']??0),$items);sort($segmentRiskValues,SORT_NUMERIC);sort($offsetValues,SORT_NUMERIC);
+                $offset=max(0,(int)round($median($offsetValues)));$first=$items[0];
+                $segmentRisks[]=['name'=>$name,'risk'=>$median($segmentRiskValues),'start_time'=>$actualDeparture->modify('+'.$offset.' seconds')->format(DATE_ATOM),
+                    'start_timezone'=>(string)($first['start_timezone']??'America/New_York'),'start_offset_seconds'=>$offset];
+            }
             $ranked[]=['route'=>$evidence[0]['route'],'departure'=>$actualDeparture->format(DATE_ATOM),'expected_seconds'=>$median($expected),
                 'upper_seconds'=>$p90,'risk'=>$median($risks),'confidence'=>$confidence,'evidence_groups'=>count($evidence),
                 'matches'=>array_sum(array_column($evidence,'matches')),'latest_source_at'=>$latest['source_at'],'source_id'=>$latest['source_id'],
-                'source_index'=>$latest['source_index'],'map_available'=>$latest['map_available'],'target_speed_mph'=>$speedTenths/10];
+                'source_index'=>$latest['source_index'],'map_available'=>$latest['map_available'],'target_speed_mph'=>$speedTenths/10,
+                'segment_risks'=>$segmentRisks];
         }
         if(!$ranked)throw new RuntimeException('No directly supported historical patterns fall within that future range.');
         $eligible=array_values(array_filter($ranked,static fn(array $item):bool=>$item['risk']<=$maxRisk));$pool=$eligible?:$ranked;
@@ -98,7 +113,21 @@ final class Planner
         foreach($pool as $index=>$item)if(substr($item['departure'],0,10)!==substr($selected[0]['departure'],0,10)){$item['designation']='day_alternative';$selected[]=$item;unset($pool[$index]);break;}
         foreach($pool as $item)if($item['route']!==$selected[0]['route']||abs(strtotime($item['departure'])-strtotime($selected[0]['departure']))>=3600){$item['designation']='route_time_alternative';$selected[]=$item;break;}
         foreach($pool as $item){if(count($selected)>=3)break;if(!in_array($item,$selected,true))$selected[]=$item;}
-        $selected=array_slice($selected,0,3);$selected[0]['designation']='recommended';foreach($selected as &$item){unset($item['_score']);$item['within_risk_limit']=$item['risk']<=$maxRisk;}unset($item);
+        $selected=array_slice($selected,0,3);$selected[0]['designation']='recommended';$highestSegmentRisk=0.0;
+        foreach($selected as $item)foreach($item['segment_risks'] as $segment)$highestSegmentRisk=max($highestSegmentRisk,$segment['risk']);
+        foreach($selected as &$item){unset($item['_score']);$item['within_risk_limit']=$item['risk']<=$maxRisk;
+            foreach($item['segment_risks'] as &$segment)$segment['color']=$this->riskColor($highestSegmentRisk>0?$segment['risk']/$highestSegmentRisk:0.0);
+            unset($segment);
+        }unset($item);
         $progress(4,4,'Complete');return$selected;
+    }
+
+    private function riskColor(float $risk):string
+    {
+        $risk=max(0.0,min(1.0,$risk));
+        if($risk<=.5){$share=$risk*2;$from=[21,148,71];$to=[240,180,41];}
+        else{$share=($risk-.5)*2;$from=[240,180,41];$to=[198,40,40];}
+        $rgb=array_map(static fn(int $start,int $end):int=>(int)round($start+($end-$start)*$share),$from,$to);
+        return sprintf('%02x%02x%02x',...$rgb);
     }
 }

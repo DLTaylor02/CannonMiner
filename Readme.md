@@ -94,7 +94,7 @@ Each route and departure-time combination is evaluated using:
 - The probability of a meaningful slowdown on any segment or across the complete route
 Options exceeding the selected maximum delay risk are excluded when possible. Maximum-risk fields in the WebUI are entered as percentages from `0` to `100`; for example, enter `43` for 43%. Balanced and Fastest then favor the lowest expected travel time, with delay risk used as a tie-breaker. Reliability favors the lowest delay risk first, with expected travel time used as a tie-breaker.
 Exactly three supported combinations are displayed. The first is the highest-ranked option. The remaining choices favor a different day, route, or meaningfully different departure window while preserving the normal ranking order. If no option satisfies the maximum-risk setting, CannonMiner displays the best available supported alternatives instead of returning no result.
-Calculated Runs treats the Recommended, Day alternative, and Route/time alternative positions as independently groupable results. Selecting a history entry opens that specific result from the most recent calculation in its match group.
+Historical Analysis treats the Recommended, Day alternative, and Route/time alternative positions as independently groupable results. Selecting a history entry opens that specific result from the most recent calculation in its match group.
 
 Confidence is separate from risk. CannonMiner repeatedly resamples the existing simulation outcomes to measure how often a candidate remains in the top three. Evidence coverage reaches 50% when the least-supported segment has the median sample count among the candidates being compared. The displayed confidence is the geometric mean of ranking stability and evidence coverage. Repeating an identical automated calculation does not add calendar evidence: only the latest equivalent calculation contributes. Calendar points are `confidence x (1 - risk)`, and all three results can contribute.
 
@@ -113,8 +113,9 @@ the likely upper duration is its 90th percentile. Projection confidence combines
 the historical confidence, number of distinct evidence groups, agreement between
 them, and age of the latest evidence. The page returns up to three choices,
 includes the latest supporting calculation and a cruising-speed calculator link,
-and provides a **Print** button for paper or PDF output.
+and provides a **Print** button for paper or PDF output. Previous projections
+remain available under **Run Windows**.
 
-Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Calculated Runs, and Calendar display only calculations produced by the current method. The dynamically calibrated confidence calculation is method version 3.
+Calculation methods are versioned. Existing calculations remain in the database and their direct result links continue to work, while the dashboard, Historical Analysis, and Calendar display only calculations produced by the current method. The dynamically calibrated confidence calculation is method version 3.
 
 The Calendar uses green cell shading for recommendation points and a red top-left corner marker for recurring traffic conditions derived directly from measurements. The marker appears only when a segment-local month, weekday, and hour has at least two observations and its average delay exceeds the meaningful slowdown threshold. Its red intensity represents relative severity. Selecting a day shows its recommended departures and the affected segments, local times, delays, and sample counts.
