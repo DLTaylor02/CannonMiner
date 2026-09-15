@@ -13,7 +13,7 @@
     const option = form.elements.route.selectedOptions[0];
     const distance = Number(option?.dataset.distance);
     const average = number('average'), capacity = number('capacity'), mpg = number('mpg');
-    const flow = 8, payment = 2;
+    const flow = Number(form.dataset.fuelRate), payment = 5;
     const acceleration = 5, deceleration = 5;
     const values = [distance, average, capacity, mpg, flow, acceleration, deceleration];
     if (values.some(value => !Number.isFinite(value) || value <= 0) || !Number.isFinite(payment) || payment < 0) {
@@ -43,7 +43,6 @@
     if (available <= 0 || discriminant < 0 || k <= 0) {
       output('cruise-speed').textContent = 'Not attainable';
       output('transition-time').textContent = '-';
-      output('cruise-formula').textContent = `D / V + K x V + S = D / A; no real solution`;
       error.hidden = false;
       error.textContent = 'The target average cannot be reached with these stop and acceleration assumptions.';
       return;
@@ -52,7 +51,6 @@
     const transitionHours = cycles * cruise * (1 / acceleration + 1 / deceleration) / 3600;
     output('cruise-speed').textContent = `${cruise.toFixed(1)} mph`;
     output('transition-time').textContent = time(transitionHours);
-    output('cruise-formula').textContent = `${distance.toFixed(1)} / V + ${k.toFixed(6)} x V + ${stoppedHours.toFixed(3)} = ${(distance / average).toFixed(3)} hr`;
     error.hidden = true;
   };
   form.addEventListener('input', calculate);
