@@ -38,13 +38,14 @@ impact. A flat tire includes controlled deceleration and acceleration around a
 15-minute repair. Police events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Driver fatigue at or above 75% increases the likelihood of non-weather
-obstacle events. Random events activate at a deterministic point between 20%
-and 85% through the segment rather than at its entrance. Recorded traffic also
-begins at a deterministic interior point, and its cap lasts only long enough
-to reproduce the observed delay. Tail winds improve fuel economy by
+obstacle events. Each segment has three independently rolled event windows,
+spread across 15% to 90% of the segment, so more than one random event can occur
+during the same segment. Recorded traffic also begins at a deterministic
+interior point, and its cap lasts only long enough to reproduce the observed
+delay. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
-Ordinary random events occur slightly more often than in the initial simulator
-balance. A target speed above 119 mph activates an additional deterministic
+Ordinary random events occur more often than in the initial simulator balance.
+A target speed above 119 mph activates one additional deterministic
 crash risk on each segment; a crash immediately ends the run.
