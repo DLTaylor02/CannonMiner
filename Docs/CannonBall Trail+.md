@@ -43,3 +43,6 @@ segment rather than only at its entrance. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
+Ordinary random events occur slightly more often than in the initial simulator
+balance. A target speed above 119 mph activates an additional deterministic
+crash risk on each segment; a crash immediately ends the run.
