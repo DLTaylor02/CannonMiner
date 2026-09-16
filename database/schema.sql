@@ -97,6 +97,16 @@ CREATE TABLE IF NOT EXISTS simulations (
 );
 CREATE INDEX IF NOT EXISTS simulations_user_time_idx ON simulations(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS simulations_active_idx ON simulations(last_tick_at,id) WHERE status IN ('running','awaiting_driver');
+UPDATE simulations
+SET state = jsonb_set(
+    state,
+    '{finished_elapsed_seconds}',
+    to_jsonb(GREATEST(0::BIGINT, EXTRACT(EPOCH FROM (simulated_at - departure_at))::BIGINT)),
+    true
+)
+WHERE status = 'completed'
+  AND state->>'node' = 'portofino'
+  AND NOT (state ? 'finished_elapsed_seconds');
 
 CREATE TABLE IF NOT EXISTS simulation_events (
     id BIGSERIAL PRIMARY KEY,

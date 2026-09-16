@@ -28,6 +28,12 @@ final class Simulator
 
     public static function locationName(string $node):string{return self::LOCATIONS[$node]??ucwords(str_replace('_',' ',$node));}
     public static function routeName(string $segment):string{$parts=explode('_to_',$segment,2);return count($parts)===2?self::locationName($parts[0]).' to '.self::locationName($parts[1]):$segment;}
+    public static function routeLabel(array $segments):string
+    {
+        $nodes=[];
+        foreach($segments as $segment){$parts=explode('_to_',(string)$segment,2);if(count($parts)!==2)continue;if(!$nodes)$nodes[]=$parts[0];$nodes[]=$parts[1];}
+        return implode(' → ',array_map([self::class,'locationName'],$nodes));
+    }
 
     public function create(int $userId,array $input,array $roster):string
     {
@@ -41,7 +47,7 @@ final class Simulator
         if(count($drivers)>3)throw new RuntimeException('Choose no more than two additional drivers.');
         if(!in_array($initialDriver,array_column($drivers,'id'),true))throw new RuntimeException('Choose an initial driver from the selected roster.');
         $seed=random_int(1,2147483647);$choices=$this->choicePayload('redball');if(!$choices)throw new RuntimeException('No supported route begins at Red Ball.');
-        $state=['node'=>'redball','route'=>[],'traveled_segments'=>[],'choices'=>$choices,'current_segment'=>null,'active_weather'=>null,'drivers'=>$drivers,'driver_copilot'=>false,'pending_decision'=>['type'=>'route'],
+        $state=['node'=>'redball','route'=>[],'traveled_segments'=>[],'choices'=>$choices,'current_segment'=>null,'active_weather'=>null,'drivers'=>$drivers,'driver_copilot'=>false,'pending_decision'=>['type'=>'route'],'departure_at'=>$departure->format(DATE_ATOM),
             'vehicle'=>['capacity'=>$capacity,'fuel'=>$capacity,'mpg'=>$mpg,'target_speed'=>$speed,'current_speed'=>0.0,'distance_miles'=>0.0,'stopped_seconds'=>0.0],
             'started'=>false,'traffic_mode'=>$departure<new DateTimeImmutable('now')?'recorded':'projected'];
         $id=bin2hex(random_bytes(16));$this->pdo->beginTransaction();
@@ -55,7 +61,7 @@ final class Simulator
     {
         $this->pdo->beginTransaction();try{$statement=$this->pdo->prepare("SELECT * FROM simulations WHERE id=? FOR UPDATE");$statement->execute([$id]);$simulation=$statement->fetch();
         if(!$simulation||$simulation['status']!=='running'){$this->pdo->commit();return;}
-        $state=json_decode((string)$simulation['state'],true,512,JSON_THROW_ON_ERROR);$now=microtime(true);$last=(new DateTimeImmutable($simulation['last_tick_at']))->format('U.u');
+        $state=json_decode((string)$simulation['state'],true,512,JSON_THROW_ON_ERROR);$state['departure_at']??=$simulation['departure_at'];$now=microtime(true);$last=(new DateTimeImmutable($simulation['last_tick_at']))->format('U.u');
         $wall=max(0,min(10,$now-(float)$last));$delta=$wall*($simulation['mode']==='arcade'?60:1);if($delta<.05){$this->pdo->commit();return;}
         $simulated=(new DateTimeImmutable($simulation['simulated_at']))->modify('+'.(int)round($delta).' seconds');$status=$simulation['status'];
         $this->advanceFatigue($state,$delta,$id,$simulated,$status);
@@ -69,7 +75,7 @@ final class Simulator
         $this->pdo->beginTransaction();try{$statement=$this->pdo->prepare('SELECT * FROM simulations WHERE id=? FOR UPDATE');$statement->execute([$id]);$simulation=$statement->fetch();
         if(!$simulation||(int)$simulation['user_id']!==$userId){$this->pdo->rollBack();throw new RuntimeException('Simulation not found.');}
         if(in_array($simulation['status'],['completed','failed'],true)){ $this->pdo->rollBack();throw new RuntimeException('This simulation has ended.'); }
-        $state=json_decode((string)$simulation['state'],true,512,JSON_THROW_ON_ERROR);$status=$simulation['status'];$at=new DateTimeImmutable($simulation['simulated_at']);
+        $state=json_decode((string)$simulation['state'],true,512,JSON_THROW_ON_ERROR);$state['departure_at']??=$simulation['departure_at'];$status=$simulation['status'];$at=new DateTimeImmutable($simulation['simulated_at']);
         if(in_array($state['pending_decision']['type']??'',['event','confirmation'],true)&&!in_array($action,['acknowledge_event','fuel_change_driver'],true))throw new RuntimeException('Acknowledge the active event first.');
         if($action==='choose_segment'&&$status==='awaiting_route'){$name=(string)($payload['segment']??'');if(!in_array($name,array_column($state['choices'],'name'),true))throw new RuntimeException('Choose an available onward segment.');$state['pending_decision']=null;$status=$this->startSegment($state,$name,$at,$id,(int)$simulation['random_seed']);}
         elseif($action==='pause'&&$status==='running'){$status='paused';$state['user_paused']=true;$this->event($id,$at,'paused');}
@@ -112,7 +118,7 @@ final class Simulator
         $fuelShare=$state['vehicle']['fuel']/$state['vehicle']['capacity'];if($fuelShare<=.25&&!($state['fuel_warning']??false)){$percent=(int)round($fuelShare*100);$state['fuel_warning']=true;$state['pending_decision']=['type'=>'event','event'=>'fuel_warning','percent'=>$percent];$status='paused';$this->event($id,$at,'fuel_warning',['percent'=>$percent]);return;}
         if($segment['distance_traveled_miles']+.001<$distance)return;
         $state['node']=$segment['end'];$state['vehicle']['current_speed']=0;$state['traveled_segments'][]=['name'=>$segment['name'],'start'=>$segment['start'],'end'=>$segment['end'],'polyline'=>$segment['polyline'],'speed_trace'=>$segment['speed_trace']??[],'map_events'=>$segment['map_events']??[]];$this->event($id,$at,'segment_completed',['segment'=>$segment['name'],'node'=>$state['node']]);$state['current_segment']=null;
-        if($state['node']==='portofino'){$state['end_reason']='The crew reached Portofino Marina, CA.';$status='completed';$this->event($id,$at,'arrived_portofino',['distance_miles'=>$state['vehicle']['distance_miles']]);return;}
+        if($state['node']==='portofino'){$departure=new DateTimeImmutable((string)$state['departure_at']);$state['finished_elapsed_seconds']=max(0,$at->getTimestamp()-$departure->getTimestamp());$state['end_reason']='The crew reached Portofino Marina, CA.';$status='completed';$this->event($id,$at,'arrived_portofino',['distance_miles'=>$state['vehicle']['distance_miles'],'elapsed_seconds'=>$state['finished_elapsed_seconds']]);return;}
         $state['choices']=$this->choicePayload($state['node']);if(count($state['choices'])===1){try{$status=$this->startSegment($state,$state['choices'][0]['name'],$at,$id,$seed+count($state['route']));}catch(RuntimeException $error){$status='failed';$state['failure_reason']='The run ended because supported traffic data was unavailable: '.$error->getMessage();$this->event($id,$at,'traffic_unavailable',['message'=>$error->getMessage()]);}}else{$status='awaiting_route';$state['pending_decision']=['type'=>'route'];$this->event($id,$at,'route_choice_required',['node'=>$state['node']]);}
     }
 

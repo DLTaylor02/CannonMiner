@@ -95,7 +95,8 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 }
 .simulation-row>a{display:flex;justify-content:space-between;gap:20px;min-width:0;flex:1;color:var(--ink);text-decoration:none}
 .simulation-row>a>div{display:grid;gap:3px}
-.simulation-row>a>div:last-child{text-align:right}
+.simulation-row>a>div:last-child{min-width:150px;text-align:right}
+.simulation-row>a>div:last-child strong{white-space:nowrap}
 .simulation-row>form{align-self:center;margin:0}
 .simulation-title{display:flex;align-items:center;gap:12px}
 .simulation-title #pause-action{height:34px;padding:0 13px}
