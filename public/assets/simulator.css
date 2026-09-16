@@ -11,6 +11,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .simulation-row>div{display:grid;gap:3px}
 .simulation-row>div:last-child{text-align:right}
 .simulation-row span,.simulation-row time,.simulator-empty{color:var(--muted);font-size:12px}
+.simulation-finish-time{color:var(--green);font-size:19px;font-weight:850;font-variant-numeric:tabular-nums}
 .simulation-setup{display:grid;gap:20px}
 .simulation-setup fieldset{margin:0;padding:18px;border:1px solid var(--line);background:var(--white)}
 .simulation-setup legend{padding:0 10px;font-size:20px;font-weight:750}
