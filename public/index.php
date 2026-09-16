@@ -355,7 +355,7 @@ $app->get('/tools',function(Request $request,Response $response)use($router,$set
     $routes=$router->calculatorRoutes();$query=$request->getQueryParams();$selected=(string)($query['route']??'');
     if(!in_array($selected,array_column($routes,'label'),true))$selected=(string)($routes[0]['label']??'');
     $speed=max(1,min(500,(float)($query['speed']??$settings->get('default_speed_mph','110'))));
-    $fuelRate=max(.1,min(100,(float)$settings->get('cruising_fuel_rate_gpm','5')));
+    $fuelRate=max(.1,min(100,(float)$settings->get('cruising_fuel_rate_gpm','10')));
     return $render($request,$response,'tools.twig',['routes'=>$routes,'selected_route'=>$selected,'target_speed'=>$speed,'fuel_rate_gpm'=>$fuelRate,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 $app->get('/tools/heatmap',function(Request $request,Response $response)use($router,$settings):Response{
@@ -642,13 +642,13 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
         if(!in_array($identity['role'],['admin','superadmin'],true))return$response->withStatus(403);
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','cruising_fuel_rate_gpm','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','cruising_fuel_rate_gpm','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes','simulator_crash_120_percent','simulator_crash_145_percent','simulator_weather_percent','simulator_flat_tire_percent','simulator_headwind_percent','simulator_tailwind_percent','simulator_police_percent','simulator_road_event_percent']);
         $body=array_intersect_key($body,array_flip($allowed));
         $body['default_max_delay_risk']=(string)(max(0,min(100,(float)($body['default_max_delay_risk']??20)))/100);
         if($identity['role']==='superadmin'){
             $body['collection_interval_minutes']=(string)max(5,min(10080,(int)($body['collection_interval_minutes']??60)));
             $body['departure_interval_minutes']=(string)max(5,min(60,(int)($body['departure_interval_minutes']??15)));
-            $body['cruising_fuel_rate_gpm']=(string)max(.1,min(100,(float)($body['cruising_fuel_rate_gpm']??5)));
+            $body['cruising_fuel_rate_gpm']=(string)max(.1,min(100,(float)($body['cruising_fuel_rate_gpm']??10)));
             $body['login_rate_limit']=(string)max(1,min(100,(int)($body['login_rate_limit']??5)));
             $body['login_lockout_minutes']=(string)max(1,min(1440,(int)($body['login_lockout_minutes']??15)));
             $body['password_min_length']=(string)max(8,min(64,(int)($body['password_min_length']??12)));
@@ -659,6 +659,7 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
             $body['automation_max_risk']=(string)(max(0,min(100,(float)($body['automation_max_risk']??20)))/100);
             $body['telemetry_interval_minutes']=(string)max(1,min(1440,(int)($body['telemetry_interval_minutes']??15)));
+            foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$body[$key]=(string)max(0,min(100,(float)($body[$key]??$default)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);
         }
@@ -666,7 +667,8 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     }
     $values=$settings->all();
     if(!isset($values['automation_interval_minutes']))$values['automation_interval_minutes']=(string)(max(1,min(168,(int)($values['automation_interval_hours']??1)))*60);
-    $values['cruising_fuel_rate_gpm']??='5';
+    $values['cruising_fuel_rate_gpm']??='10';
+    foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$values[$key]??=(string)$default;
     $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);

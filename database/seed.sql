@@ -1,14 +1,30 @@
 INSERT INTO settings (key, value) VALUES
 ('google_maps_api_key', ''), ('timezone', 'America/New_York'), ('default_speed_mph', '110'),
 ('default_max_delay_risk', '0.20'), ('candidate_routes', '25'), ('departure_interval_minutes', '15'),
-('cruising_fuel_rate_gpm', '5'),
+('cruising_fuel_rate_gpm', '10'),
 ('collection_interval_minutes', '60'), ('google_data_storage_authorized', 'no'),
 ('login_rate_limit', '5'), ('login_lockout_minutes', '15'),
 ('password_min_strength', 'strong'), ('password_min_length', '12'),
 ('automation_enabled', 'yes'), ('automation_interval_minutes', '60'),
 ('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
-('telemetry_interval_minutes', '15'), ('dashboard_banner', '')
+('telemetry_interval_minutes', '15'), ('dashboard_banner', ''),
+('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
+('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'),
+('simulator_headwind_percent', '1'), ('simulator_tailwind_percent', '1'),
+('simulator_police_percent', '5'), ('simulator_road_event_percent', '5')
 ON CONFLICT (key) DO NOTHING;
+
+WITH fuel_rate_upgrade AS (
+    INSERT INTO settings (key, value)
+    VALUES ('cruising_fuel_rate_default_version', '2')
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+)
+UPDATE settings
+SET value = '10'
+WHERE key = 'cruising_fuel_rate_gpm'
+  AND value = '5'
+  AND EXISTS (SELECT 1 FROM fuel_rate_upgrade);
 
 INSERT INTO segments (name,start_node,end_node,origin,destination,timezone) VALUES
 ('redball_to_you','redball','you','142 E 31st St, New York, NY 10016','6965 Truck World Blvd, Hubbard, OH 44425','America/New_York'),

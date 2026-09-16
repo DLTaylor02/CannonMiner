@@ -13,7 +13,7 @@
     const option = form.elements.route.selectedOptions[0];
     const distance = Number(option?.dataset.distance);
     const average = number('average'), capacity = number('capacity'), mpg = number('mpg');
-    const flow = Number(form.dataset.fuelRate), payment = 5;
+    const flow = Number(form.dataset.fuelRate), payment = 1;
     const acceleration = 5, deceleration = 5;
     const values = [distance, average, capacity, mpg, flow, acceleration, deceleration];
     if (values.some(value => !Number.isFinite(value) || value <= 0) || !Number.isFinite(payment) || payment < 0) {

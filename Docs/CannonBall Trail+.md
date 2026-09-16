@@ -34,6 +34,11 @@ the final summary joins the stored polylines for every segment traveled. Fuel
 stops, driver changes, police encounters, flat tires, road obstacles, and each
 weather condition are retained as distinct symbols on both maps.
 
+Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
+and scales linearly toward 10 GPM as the crew's combined co-piloting skill
+approaches 90; totals of 90 or higher receive the full 10 GPM rate. Vehicle
+deceleration and acceleration continue to occur at 5 mph per second.
+
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
 for the affected segment. Weather is independent of crew skill and applies a
 speed cap: fog 45 mph, rain 80 mph, ice 35 mph, or snow 65 mph. Each weather
@@ -49,8 +54,7 @@ impact. A flat tire includes controlled deceleration and acceleration around a
 co-piloting skill at the time of the flat, including fatigue reductions. Police
 events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
-jail. Driver fatigue at or above 75% increases the likelihood of non-weather
-obstacle events. Each segment has three independently rolled event windows,
+jail. Each segment has three independently rolled event windows,
 spread across 15% to 90% of the segment, so more than one random event can occur
 during the same segment. Recorded traffic also begins at a deterministic
 interior point, and its cap lasts only long enough to reproduce the observed
@@ -58,6 +62,13 @@ delay. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
-Ordinary random events occur more often than in the initial simulator balance.
-A target speed above 119 mph activates one additional deterministic
-crash risk on each segment; a crash immediately ends the run.
+Superadmins can configure the baseline percentage for weather, flat tires,
+headwinds, tailwinds, police, and road events. Regional and seasonal eligibility
+still determines which weather and wind effects can occur. When more than one
+effect succeeds at the same event opportunity, the seeded simulator selects one
+deterministically. These percentages are captured when a simulation is created,
+so later settings changes do not alter a saved game. Traffic is not governed by these percentages: past runs use
+recorded traffic evidence and future runs use supported predicted evidence.
+A target speed over 120 mph activates the configurable high-speed crash check;
+speeds over 145 mph also activate a separate higher-speed crash check. Either
+crash immediately ends the run.
