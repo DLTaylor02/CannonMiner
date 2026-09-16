@@ -96,4 +96,6 @@ Every segment has an independent 1% base crash chance at any speed. This base
 chance does not display a speed warning. A target speed over 120 mph activates the configurable high-speed crash check;
 speeds over 145 mph also activate a separate higher-speed crash check. Either
 crash immediately ends the run. Crossing each threshold presents its own
-warning and pauses simulated time until the warning is acknowledged.
+warning and pauses simulated time until the warning is acknowledged. Lowering
+the effective vehicle speed below a threshold rearms that warning for the next
+upward crossing.
