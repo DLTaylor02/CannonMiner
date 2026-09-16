@@ -15,6 +15,19 @@ but actual speed is capped and the live map shows a vehicle-limit status icon.
 Traffic and weather caps take priority when they impose a lower limit. Cars use
 their stock top speed until a future equipped item enables the tuned top speed.
 
+The setup car builder supports up to the selected car's maximum fuel-cell count.
+Each $300 cell adds 20 gallons of capacity. A $1,500 cruising tune adds 5 MPG
+above 70 mph and enables the tuned top speed. $1,500 cruising tires add 1 MPG
+and halve the configured flat-tire chance. Radio Scanner ($250), Radar Scanner
+($600), and Radar Jammer ($1,000) can be equipped together. The Radar Scanner
+first reduces encounter probability; when a jammer is also installed it handles
+an encounter before the Radio Scanner. The
+builder displays equipment modifiers and total cost without revealing base MPG.
+The Radio Scanner has an equal chance to produce an early slowdown/pass or
+continue to the normal police result. The Radar Scanner halves the configured
+police-event chance. The Radar Jammer yields a 25% slowdown/pass, 25% normal
+encounter, and 50% bypass; being pulled over with it always ends in jail.
+
 Past departures require a directly recorded observation near the time the
 vehicle enters each segment. Future departures use only directly supported
 month, weekday, and local-time evidence. The simulator does not call Google,
