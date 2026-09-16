@@ -10,10 +10,105 @@
 <label class="equipment-option"><input type="checkbox" name="cruising_tires" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6de; Cruising tires</strong><small>+1 MPG; −50% flat-tire chance | $1,500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radio_scanner" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f4fb; Radio Scanner</strong><small>Early warning response | $250</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radar_scanner" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f4e1; Radar Scanner</strong><small>−50% police encounter chance | $600</small></span></label>
-<label class="equipment-option"><input type="checkbox" name="radar_jammer" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6e1;&#xfe0f; Radar Jammer</strong><small>Active police countermeasure | $1,000</small></span></label>
+<label class="equipment-option"><input type="checkbox" name="radar_jammer" value="yes" disabled><i aria-hidden="true"></i><span><strong>&#x1f6e1;&#xfe0f; Radar Jammer</strong><small>Requires Radar Scanner; active police countermeasure | $1,000</small></span></label>
 </div><div class="equipment-summary"><div><p class="kicker">Modifiers</p><ul id="equipment-modifiers"><li>No equipment modifiers</li></ul></div><div><span>Total equipment cost</span><strong id="equipment-cost">$0</strong></div></div></fieldset>
 <fieldset><legend>Drivers</legend><div class="driver-roster">{% for driver in roster %}<label class="driver-option {{ driver.required?'required':'' }}">{% if not driver.required %}<input type="checkbox" name="drivers[]" value="{{ driver.id }}"><i aria-hidden="true"></i>{% endif %}<span><strong>{{ driver.name }}{% if driver.required %} | You{% endif %}</strong><small>Endurance {{ driver.endurance }} | Driving {{ driver.driving }} | Co-piloting {{ driver.copilot }}</small></span></label>{% endfor %}</div><label class="initial-driver">Initial driver<select name="initial_driver" required>{% for driver in roster %}<option value="{{ driver.id }}" data-optional="{{ driver.required?'no':'yes' }}" {{ driver.required?'selected':'disabled' }}>{{ driver.name }}{% if driver.required %} (you){% endif %}</option>{% endfor %}</select></label><a class="result-tool-link" href="?regenerate=1">Generate another roster</a></fieldset>
 <button class="simulator-primary">Begin simulation</button></form>
-<dialog id="setup-speed-warning"><div class="decision-heading"><p class="kicker">High-speed warning</p><h2>Crash risk active</h2></div><p>Above 120 mph, a high-speed crash can immediately end the run. Above 145 mph, a second higher-speed crash check also becomes active. Choose the pace with care.</p><div class="decision-options"><button class="decision-ok" type="button">OK</button></div></dialog>
-<script>const rosterChecks=[...document.querySelectorAll('.driver-option input')],initialDriver=document.querySelector('[name=initial_driver]'),speedInput=document.querySelector('[name=speed]'),speedWarning=document.getElementById('setup-speed-warning'),carSelector=document.getElementById('car-selector'),fuelCellInput=document.getElementById('fuel-cell-input'),fuelCellCount=document.getElementById('fuel-cell-count'),tuneInput=document.querySelector('[name=cruising_tune]'),tiresInput=document.querySelector('[name=cruising_tires]'),radioInput=document.querySelector('[name=radio_scanner]'),radarInput=document.querySelector('[name=radar_scanner]'),jammerInput=document.querySelector('[name=radar_jammer]');let highSpeedWarningShown=false;function syncDrivers(){rosterChecks.forEach(check=>{const option=initialDriver.querySelector(`[value="${check.value}"]`);option.disabled=!check.checked});if(initialDriver.selectedOptions[0].disabled)initialDriver.value='self'}function warnSpeed(){const car=carSelector.selectedOptions[0],top=Number(tuneInput.checked?car.dataset.tunedTop:car.dataset.top),highSpeed=Math.min(Number(speedInput.value),top)>120;if(highSpeed&&!highSpeedWarningShown&&!speedWarning.open)speedWarning.showModal();highSpeedWarningShown=highSpeed}function syncEquipment(){const max=Number(carSelector.selectedOptions[0].dataset.maxFuelCells),cells=Math.max(0,Math.min(max,Number(fuelCellInput.value)||0));fuelCellInput.value=String(cells);fuelCellCount.value=String(cells);document.getElementById('fuel-cell-remove').disabled=cells===0;document.getElementById('fuel-cell-add').disabled=cells===max;const modifiers=[];if(cells)modifiers.push(`+${cells*20} gal fuel capacity`);if(tuneInput.checked)modifiers.push('+5 MPG above 70 mph; tuned top speed unlocked');if(tiresInput.checked)modifiers.push('+1 MPG; flat-tire chance reduced 50%');if(radioInput.checked)modifiers.push('Radio Scanner police response');if(radarInput.checked)modifiers.push('Police encounter chance reduced 50%');if(jammerInput.checked)modifiers.push('Radar Jammer police response');document.getElementById('equipment-modifiers').innerHTML=(modifiers.length?modifiers:['No equipment modifiers']).map(item=>`<li>${item}</li>`).join('');const cost=cells*300+(tuneInput.checked?1500:0)+(tiresInput.checked?1500:0)+(radioInput.checked?250:0)+(radarInput.checked?600:0)+(jammerInput.checked?1000:0);document.getElementById('equipment-cost').textContent=new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}).format(cost)}rosterChecks.forEach(check=>check.addEventListener('change',()=>{if(rosterChecks.filter(item=>item.checked).length>2)check.checked=false;syncDrivers()}));speedInput.addEventListener('input',warnSpeed);carSelector.addEventListener('change',()=>{warnSpeed();syncEquipment()});document.getElementById('fuel-cell-remove').addEventListener('click',()=>{fuelCellInput.value=String(Number(fuelCellInput.value)-1);syncEquipment()});document.getElementById('fuel-cell-add').addEventListener('click',()=>{fuelCellInput.value=String(Number(fuelCellInput.value)+1);syncEquipment()});tuneInput.addEventListener('change',()=>{syncEquipment();warnSpeed()});[tiresInput,radioInput,radarInput,jammerInput].forEach(control=>control.addEventListener('change',syncEquipment));speedWarning.querySelector('button').addEventListener('click',()=>speedWarning.close());syncDrivers();syncEquipment();</script>
+<dialog id="setup-speed-warning-120"><div class="decision-heading"><p class="kicker">High-speed warning</p><h2>Crash risk active</h2></div><p>This car can exceed 120 mph at the selected target. The high-speed crash check can immediately end the run.</p><div class="decision-options"><button class="decision-ok" type="button">OK</button></div></dialog>
+<dialog id="setup-speed-warning-145"><div class="decision-heading"><p class="kicker">Higher-speed warning</p><h2>Second crash risk active</h2></div><p>This car can exceed 145 mph at the selected target. A second, independent higher-speed crash check becomes active.</p><div class="decision-options"><button class="decision-ok" type="button">OK</button></div></dialog>
+<script>
+const rosterChecks = [...document.querySelectorAll('.driver-option input')];
+const initialDriver = document.querySelector('[name=initial_driver]');
+const speedInput = document.querySelector('[name=speed]');
+const carSelector = document.getElementById('car-selector');
+const fuelCellInput = document.getElementById('fuel-cell-input');
+const fuelCellCount = document.getElementById('fuel-cell-count');
+const tuneInput = document.querySelector('[name=cruising_tune]');
+const tiresInput = document.querySelector('[name=cruising_tires]');
+const radioInput = document.querySelector('[name=radio_scanner]');
+const radarInput = document.querySelector('[name=radar_scanner]');
+const jammerInput = document.querySelector('[name=radar_jammer]');
+const speedWarnings = {
+  120: document.getElementById('setup-speed-warning-120'),
+  145: document.getElementById('setup-speed-warning-145')
+};
+const acknowledgedSpeedWarnings = new Set();
+const speedWarningQueue = [];
+
+function syncDrivers() {
+  rosterChecks.forEach(check => {
+    const option = initialDriver.querySelector(`[value="${check.value}"]`);
+    option.disabled = !check.checked;
+  });
+  if (initialDriver.selectedOptions[0].disabled) initialDriver.value = 'self';
+}
+
+function showNextSpeedWarning() {
+  if (Object.values(speedWarnings).some(dialog => dialog.open) || !speedWarningQueue.length) return;
+  speedWarnings[speedWarningQueue.shift()].showModal();
+}
+
+function warnSpeed() {
+  const car = carSelector.selectedOptions[0];
+  const topSpeed = Number(tuneInput.checked ? car.dataset.tunedTop : car.dataset.top);
+  const actualSpeed = Math.min(Number(speedInput.value), topSpeed);
+  [120, 145].forEach(threshold => {
+    if (actualSpeed > threshold && !acknowledgedSpeedWarnings.has(threshold)) {
+      acknowledgedSpeedWarnings.add(threshold);
+      speedWarningQueue.push(threshold);
+    }
+  });
+  showNextSpeedWarning();
+}
+
+function syncEquipment() {
+  const max = Number(carSelector.selectedOptions[0].dataset.maxFuelCells);
+  const cells = Math.max(0, Math.min(max, Number(fuelCellInput.value) || 0));
+  fuelCellInput.value = String(cells);
+  fuelCellCount.value = String(cells);
+  document.getElementById('fuel-cell-remove').disabled = cells === 0;
+  document.getElementById('fuel-cell-add').disabled = cells === max;
+  jammerInput.disabled = !radarInput.checked;
+  if (jammerInput.disabled) jammerInput.checked = false;
+
+  const modifiers = [];
+  if (cells) modifiers.push(`+${cells * 20} gal fuel capacity`);
+  if (tuneInput.checked) modifiers.push('+5 MPG above 70 mph; tuned top speed unlocked');
+  if (tiresInput.checked) modifiers.push('+1 MPG; flat-tire chance reduced 50%');
+  if (radioInput.checked) modifiers.push('Radio Scanner police response');
+  if (radarInput.checked) modifiers.push('Police encounter chance reduced 50%');
+  if (jammerInput.checked) modifiers.push('Radar Jammer police response');
+  document.getElementById('equipment-modifiers').innerHTML = (modifiers.length ? modifiers : ['No equipment modifiers'])
+    .map(item => `<li>${item}</li>`).join('');
+
+  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tiresInput.checked ? 1500 : 0)
+    + (radioInput.checked ? 250 : 0) + (radarInput.checked ? 600 : 0) + (jammerInput.checked ? 1000 : 0);
+  document.getElementById('equipment-cost').textContent = new Intl.NumberFormat(undefined, {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0
+  }).format(cost);
+}
+
+rosterChecks.forEach(check => check.addEventListener('change', () => {
+  if (rosterChecks.filter(item => item.checked).length > 2) check.checked = false;
+  syncDrivers();
+}));
+speedInput.addEventListener('input', warnSpeed);
+carSelector.addEventListener('change', () => { warnSpeed(); syncEquipment(); });
+document.getElementById('fuel-cell-remove').addEventListener('click', () => {
+  fuelCellInput.value = String(Number(fuelCellInput.value) - 1);
+  syncEquipment();
+});
+document.getElementById('fuel-cell-add').addEventListener('click', () => {
+  fuelCellInput.value = String(Number(fuelCellInput.value) + 1);
+  syncEquipment();
+});
+tuneInput.addEventListener('change', () => { syncEquipment(); warnSpeed(); });
+[tiresInput, radioInput, radarInput, jammerInput].forEach(control => control.addEventListener('change', syncEquipment));
+Object.values(speedWarnings).forEach(dialog => dialog.querySelector('button').addEventListener('click', () => {
+  dialog.close();
+  showNextSpeedWarning();
+}));
+syncDrivers();
+syncEquipment();
+</script>
 {% endblock %}

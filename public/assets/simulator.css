@@ -46,6 +46,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .instrument span,.instrument strong{display:block}
 .instrument span{color:var(--muted);font-size:10px;text-transform:uppercase}
 .instrument strong{margin-top:5px;font-size:22px}
+.instrument-equipment{display:flex!important;flex-wrap:wrap;gap:5px}.instrument-equipment>span{display:grid;place-items:center;width:32px;height:32px;margin:0;border:1px solid var(--line);border-radius:4px;background:var(--paper);font-size:20px;cursor:help}.instrument-equipment>span:focus-visible{outline:2px solid var(--green);outline-offset:2px}
 .instrument>div{height:8px;margin-top:12px;background:var(--line)}
 .instrument>div i{display:block;width:0;height:100%;background:var(--green);transition:width .4s,background .4s}
 .simulation-controls,.simulation-log{grid-column:1/-1}
@@ -106,10 +107,10 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .simulation-row>form{align-self:center;margin:0}
 .simulation-title{display:flex;align-items:center;gap:12px}
 .simulation-title #pause-action{height:34px;padding:0 13px}
-#simulation-decision,#speed-warning,#setup-speed-warning{width:min(520px,calc(100vw - 32px));padding:22px;border:1px solid var(--line);border-radius:4px;background:var(--white);color:var(--ink);box-shadow:0 22px 70px rgba(0,0,0,.48)}
-#simulation-decision::backdrop,#speed-warning::backdrop,#setup-speed-warning::backdrop{background:rgba(8,12,10,.7)}
-#simulation-decision h2,#speed-warning h2,#setup-speed-warning h2{margin:0;font-size:24px}
-#simulation-decision>p,#speed-warning>p,#setup-speed-warning>p{color:var(--muted)}
+#simulation-decision,#setup-speed-warning-120,#setup-speed-warning-145{width:min(520px,calc(100vw - 32px));padding:22px;border:1px solid var(--line);border-radius:4px;background:var(--white);color:var(--ink);box-shadow:0 22px 70px rgba(0,0,0,.48)}
+#simulation-decision::backdrop,#setup-speed-warning-120::backdrop,#setup-speed-warning-145::backdrop{background:rgba(8,12,10,.7)}
+#simulation-decision h2,#setup-speed-warning-120 h2,#setup-speed-warning-145 h2{margin:0;font-size:24px}
+#simulation-decision>p,#setup-speed-warning-120>p,#setup-speed-warning-145>p{color:var(--muted)}
 #decision-copy{white-space:pre-line}
 .decision-heading{padding-bottom:13px;border-bottom:1px solid var(--line)}
 .decision-options{display:grid;gap:9px;margin-top:16px}

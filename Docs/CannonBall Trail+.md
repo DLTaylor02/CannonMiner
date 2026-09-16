@@ -21,7 +21,9 @@ above 70 mph and enables the tuned top speed. $1,500 cruising tires add 1 MPG
 and halve the configured flat-tire chance. Radio Scanner ($250), Radar Scanner
 ($600), and Radar Jammer ($1,000) can be equipped together. The Radar Scanner
 first reduces encounter probability; when a jammer is also installed it handles
-an encounter before the Radio Scanner. The
+an encounter before the Radio Scanner. A Radar Jammer cannot be installed
+without a Radar Scanner. The live instrument panel represents installed
+equipment with symbols whose tooltips describe each modifier. The
 builder displays equipment modifiers and total cost without revealing base MPG.
 The Radio Scanner has an equal chance to produce an early slowdown/pass or
 continue to the normal police result. The Radar Scanner halves the configured
@@ -90,6 +92,8 @@ effect succeeds at the same event opportunity, the seeded simulator selects one
 deterministically. These percentages are captured when a simulation is created,
 so later settings changes do not alter a saved game. Traffic is not governed by these percentages: past runs use
 recorded traffic evidence and future runs use supported predicted evidence.
-A target speed over 120 mph activates the configurable high-speed crash check;
+Every segment has an independent 1% base crash chance at any speed. This base
+chance does not display a speed warning. A target speed over 120 mph activates the configurable high-speed crash check;
 speeds over 145 mph also activate a separate higher-speed crash check. Either
-crash immediately ends the run.
+crash immediately ends the run. Crossing each threshold presents its own
+warning and pauses simulated time until the warning is acknowledged.
