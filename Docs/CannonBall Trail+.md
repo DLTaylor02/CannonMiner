@@ -7,6 +7,14 @@ randomly generated teammates. The signed-in user is always part of the roster.
 Realtime mode advances one simulated minute per real minute; arcade mode
 advances one simulated hour per real minute.
 
+Simulation setup uses a fixed car catalog rather than free-form vehicle values.
+Each car stores three speed-dependent MPG ratings, fuel capacity, stock and
+tuned top speeds, and a maximum fuel-cell count reserved for a later upgrade
+system. Users may request a target above the selected car's current top speed,
+but actual speed is capped and the live map shows a vehicle-limit status icon.
+Traffic and weather caps take priority when they impose a lower limit. Cars use
+their stock top speed until a future equipped item enables the tuned top speed.
+
 Past departures require a directly recorded observation near the time the
 vehicle enters each segment. Future departures use only directly supported
 month, weekday, and local-time evidence. The simulator does not call Google,
@@ -36,7 +44,7 @@ weather condition are retained as distinct symbols on both maps.
 
 Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
 and scales linearly toward 10 GPM as the crew's combined co-piloting skill
-approaches 90; totals of 90 or higher receive the full 10 GPM rate. Vehicle
+approaches 150; totals of 150 or higher receive the full 10 GPM rate. Vehicle
 deceleration and acceleration continue to occur at 5 mph per second.
 
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less

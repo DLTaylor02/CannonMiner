@@ -327,7 +327,7 @@ $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $re
     $roster=(array)($_SESSION['simulator_roster']??Simulator::roster($identity['username']));$error=null;
     if($request->getMethod()==='POST')try{$csrf($request);$id=$simulator->create((int)$identity['id'],(array)$request->getParsedBody(),$roster);unset($_SESSION['simulator_roster']);return$response->withHeader('Location','/simulator/'.$id)->withStatus(302);}catch(Throwable $exception){$error=$exception->getMessage();}
     $defaultDeparture=(new DateTimeImmutable('tomorrow 06:00',new DateTimeZone('America/New_York')))->format('Y-m-d\TH:i');
-    return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+    return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'cars'=>Simulator::cars(),'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
