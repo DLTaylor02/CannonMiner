@@ -11,6 +11,13 @@ final class SimulationTrafficProvider
 {
     public function __construct(private PDO $pdo){}
 
+    public function hasEvidenceForDate(DateTimeImmutable $at):bool
+    {
+        $now=new DateTimeImmutable('now');
+        if($at<$now){$statement=$this->pdo->prepare("SELECT NOT EXISTS(SELECT 1 FROM segments s WHERE s.enabled AND NOT EXISTS(SELECT 1 FROM measurements m WHERE m.segment_id=s.id AND (m.collected_at AT TIME ZONE s.timezone)::date=?::date AND m.duration_seconds>0 AND m.duration_in_traffic_seconds>0))");$statement->execute([$at->format('Y-m-d')]);return(bool)$statement->fetchColumn();}
+        $statement=$this->pdo->prepare("SELECT NOT EXISTS(SELECT 1 FROM segments s WHERE s.enabled AND NOT EXISTS(SELECT 1 FROM measurements m WHERE m.segment_id=s.id AND extract(month FROM m.collected_at AT TIME ZONE s.timezone)=? AND extract(isodow FROM m.collected_at AT TIME ZONE s.timezone)=? AND m.duration_seconds>0 AND m.duration_in_traffic_seconds>0))");$statement->execute([(int)$at->format('n'),(int)$at->format('N')]);return(bool)$statement->fetchColumn();
+    }
+
     public function conditions(array $segment,DateTimeImmutable $at,int $seed):array
     {
         $now=new DateTimeImmutable('now');

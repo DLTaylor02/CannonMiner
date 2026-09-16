@@ -38,4 +38,8 @@ impact. A flat tire includes controlled deceleration and acceleration around a
 15-minute repair. Police events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Driver fatigue at or above 75% increases the likelihood of non-weather
-obstacle events.
+obstacle events. Random events activate at a deterministic point within the
+segment rather than only at its entrance. Tail winds improve fuel economy by
+15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
+and driving-skill effectiveness degrade progressively above 50% fatigue. The
+crew display shows each affected skill's current effective value and reduction.

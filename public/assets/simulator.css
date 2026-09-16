@@ -26,11 +26,11 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .driver-option>span{display:grid;gap:3px}
 .driver-option small{color:var(--muted)}
 .simulation-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.5fr);gap:20px}
-.simulator-map-panel{position:relative;min-width:0;border:1px solid var(--line);background:#111}
-.simulator-map-panel canvas{display:block;width:100%;height:auto;aspect-ratio:16/8.3}
-.simulator-location{position:absolute;left:14px;bottom:14px;display:grid;padding:9px 11px;background:rgba(10,14,12,.88);color:#fff}
+.simulator-map-panel{position:relative;display:flex;min-width:0;flex-direction:column;border:1px solid var(--line);background:#111}
+.simulator-map-panel canvas{display:block;width:100%;height:auto;min-height:0;aspect-ratio:16/8.3}
+.simulator-location{position:static;display:grid;flex:0 0 auto;padding:9px 11px;background:rgba(10,14,12,.96);color:#fff}
 .simulator-location span{font-size:11px;color:#b9c8bf}
-.simulation-map-status{position:absolute;top:14px;left:14px;z-index:2;display:flex;gap:8px}
+.simulation-map-status{position:absolute;top:62px;left:14px;z-index:2;display:flex;gap:8px}
 .simulation-status-icon{display:grid;place-items:center;width:48px;height:48px;border:1px solid rgba(255,255,255,.45);border-radius:4px;background:rgba(10,14,12,.88);font-size:27px}
 .simulation-status-icon[hidden]{display:none}
 .simulator-instruments{display:grid;grid-template-columns:1fr 1fr;align-content:start;border:1px solid var(--line);background:var(--white)}
@@ -55,6 +55,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .driver-stats{display:grid;gap:4px;margin-top:8px}
 .driver-stats small{display:flex;justify-content:space-between;gap:10px}
 .driver-stats strong{color:var(--ink);font-variant-numeric:tabular-nums}
+.driver-stats em{color:var(--red);font-style:normal;font-weight:750}
 .fatigue-track{height:8px;margin-top:9px;background:var(--line)}
 .fatigue-track i{display:block;height:100%;background:var(--green)}
 .simulation-log ol{max-height:420px;margin:0;padding:0;overflow:auto;list-style:none}
@@ -73,7 +74,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
   .simulation-page .simulator-head small{color:var(--muted);font-size:11px}
   .simulation-page .simulation-grid{position:relative;height:calc(100vh - 164px);grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:minmax(0,1.08fr) minmax(0,.92fr);gap:12px}
   .simulation-page .simulator-map-panel{grid-column:1/9;grid-row:1}
-  .simulation-page .simulator-map-panel canvas{width:100%;height:100%;aspect-ratio:auto}
+  .simulation-page .simulator-map-panel canvas{width:100%;height:auto;flex:1;aspect-ratio:auto}
   .simulation-page .simulator-instruments{grid-column:9/13;grid-row:1}
   .simulation-page .instrument{min-height:0}
   .simulation-page .simulation-controls{grid-column:1/5;grid-row:2}
@@ -85,7 +86,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
   .simulation-page .simulation-controls input,.simulation-page .simulation-controls select,.simulation-page .simulation-controls button{height:36px}
   .simulation-page .driver-card{padding:8px}
   .simulation-page .simulation-crew #driver-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .simulation-page .simulation-summary{position:absolute;inset:8%;z-index:4;grid-column:auto;grid-row:auto;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  .simulation-page .simulation-summary{position:fixed;inset:80px 8vw 32px;z-index:50;grid-column:auto;grid-row:auto;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.35)}
   .simulation-page .simulation-log-below{margin-top:18px}
 }
 @media(max-width:950px){
@@ -101,13 +102,16 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 #simulation-decision::backdrop{background:rgba(8,12,10,.7)}
 #simulation-decision h2{margin:0;font-size:24px}
 #simulation-decision>p{color:var(--muted)}
+#decision-copy{white-space:pre-line}
 .decision-heading{padding-bottom:13px;border-bottom:1px solid var(--line)}
 .decision-options{display:grid;gap:9px;margin-top:16px}
 .decision-options button{width:100%;min-height:44px;height:auto;padding:9px 13px;text-align:left}
 .decision-options .decision-ok{width:120px;justify-self:center;text-align:center}
+.decision-options .decision-cancel{width:120px;justify-self:center;border-color:var(--line);background:var(--white);color:var(--ink);text-align:center}
 .decision-confirm-actions{display:flex;justify-content:center;gap:10px}
 .decision-options .decision-confirm-actions button{width:auto;min-width:120px;text-align:center}
 .simulation-summary #summary-reason{font-weight:750;text-align:center}.simulation-summary #summary-route{color:var(--muted);text-align:center}.summary-return{display:flex;justify-content:center;margin-top:20px}
 .simulation-summary #summary-route-map{display:block;width:100%;height:220px;margin-top:18px;border:1px solid var(--line);background:#101713}
 .speed-map-key{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin-top:7px;color:var(--muted);font-size:11px}.speed-map-key i{width:140px;height:7px;background:linear-gradient(90deg,#b53b32,#176b4d)}.speed-map-key b{margin-left:8px;color:var(--ink);font-weight:650}
 @media(max-width:560px){.simulation-row>a{display:grid}.simulation-row>a>div:last-child{text-align:left}.simulation-title{align-items:flex-start;flex-direction:column}}
+@media(max-width:950px){.simulation-summary:not([hidden]){position:fixed;inset:12px;z-index:50;overflow:auto;max-height:calc(100vh - 24px);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
