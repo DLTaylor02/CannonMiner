@@ -32,10 +32,18 @@ weather condition are retained as distinct symbols on both maps.
 
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
 for the affected segment. Weather is independent of crew skill and applies a
-segment speed cap: fog 45 mph, rain 80 mph, ice 35 mph, or snow 65 mph. Road
+speed cap: fog 45 mph, rain 80 mph, ice 35 mph, or snow 65 mph. Each weather
+event lasts for an undisclosed, internally bounded travel distance and carries
+into the next route segment when necessary. The simulator pauses with a notice
+when conditions return to normal. Weather selection uses the simulation month
+and the active segment's endpoints: snow and ice are restricted to winter in
+northern or mountain regions, fog favors eastern, plains, and coastal routes,
+and wind events favor plains, mountain, and western routes. Road
 events can add a bounded delay, with driving and co-pilot skill reducing their
 impact. A flat tire includes controlled deceleration and acceleration around a
-15-minute repair. Police events occur only above 70 mph; a stop has an equal
+10-to-15-minute repair. Repair time uses the entire crew's average effective
+co-piloting skill at the time of the flat, including fatigue reductions. Police
+events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Driver fatigue at or above 75% increases the likelihood of non-weather
 obstacle events. Each segment has three independently rolled event windows,

@@ -110,8 +110,25 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .decision-options .decision-cancel{width:120px;justify-self:center;border-color:var(--line);background:var(--white);color:var(--ink);text-align:center}
 .decision-confirm-actions{display:flex;justify-content:center;gap:10px}
 .decision-options .decision-confirm-actions button{width:auto;min-width:120px;text-align:center}
-.simulation-summary #summary-reason{font-weight:750;text-align:center}.simulation-summary #summary-route{color:var(--muted);text-align:center}.summary-return{display:flex;justify-content:center;margin-top:20px}
+.simulation-summary #summary-reason{font-weight:750;text-align:center}.simulation-summary #summary-route{color:var(--muted);text-align:center}.summary-return{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:20px}
 .simulation-summary #summary-route-map{display:block;width:100%;height:220px;margin-top:18px;border:1px solid var(--line);background:#101713}
 .speed-map-key{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin-top:7px;color:var(--muted);font-size:11px}.speed-map-key i{width:140px;height:7px;background:linear-gradient(90deg,#b53b32,#176b4d)}.speed-map-key b{margin-left:8px;color:var(--ink);font-weight:650}
 @media(max-width:560px){.simulation-row>a{display:grid}.simulation-row>a>div:last-child{text-align:left}.simulation-title{align-items:flex-start;flex-direction:column}}
 @media(max-width:950px){.simulation-summary:not([hidden]){position:fixed;inset:12px;z-index:50;overflow:auto;max-height:calc(100vh - 24px);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+@media print{
+  @page{margin:14mm}
+  html,body{background:#fff!important;color:#111!important}
+  body.simulation-page{display:block;min-height:0;overflow:visible}
+  .simulation-page>header,.simulation-page>footer,.simulation-page .simulator-head,.simulation-page #simulation-error,.simulation-page .simulator-map-panel,.simulation-page .simulator-instruments,.simulation-page .simulation-controls,.simulation-page .simulation-crew,.simulation-page dialog,.simulation-page .summary-return{display:none!important}
+  .simulation-page main{display:block;width:auto;max-width:none;height:auto;margin:0;padding:0;overflow:visible}
+  .simulation-page .simulation-grid{display:block;height:auto}
+  .simulation-page .simulation-summary:not([hidden]){position:static;display:block;inset:auto;max-height:none;margin:0;padding:0;border:0;background:#fff!important;color:#111!important;overflow:visible;box-shadow:none}
+  .simulation-page .simulation-summary .section-heading{margin-bottom:14px;border-color:#bbb}
+  .simulation-page .simulation-summary .metrics{break-inside:avoid;border-color:#bbb}
+  .simulation-page .simulation-summary #summary-route-map{height:auto;max-height:240px;break-inside:avoid;border-color:#bbb;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .simulation-page .speed-map-key{break-inside:avoid;color:#444}.simulation-page .speed-map-key b{color:#111}.simulation-page .speed-map-key i{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .simulation-page .simulation-log-below{display:block;margin:18px 0 0;padding:0;border:0;background:#fff!important;color:#111!important;break-before:auto}
+  .simulation-page .simulation-log ol{max-height:none;overflow:visible}
+  .simulation-page .simulation-log li{break-inside:avoid;border-color:#ddd;color:#111}
+  .simulation-page .simulation-log time{color:#444}
+}
