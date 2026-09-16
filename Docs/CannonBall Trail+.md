@@ -19,7 +19,11 @@ choices appear only where the route graph has multiple valid paths toward
 Portofino. Driver and co-pilot fatigue rises according to role and endurance;
 rest becomes more effective over time. Changing the driver requires stopping
 the vehicle. A driver reaching 100% fatigue is locked into rest until reaching
-50%. Drivers may also cover co-pilot duties during solo runs or when every
+50%. If no eligible replacement is available, the crew can rest on the side of
+the road. The vehicle remains stopped while the simulation clock and stopped
+time continue advancing, and the driver picker updates as crew members recover.
+The crew may remain stopped after a driver becomes eligible. Drivers may also
+cover co-pilot duties during solo runs or when every
 teammate requires rest, at twice the normal driving fatigue rate. Runs can be
 paused and resumed without keeping the browser open.
 
