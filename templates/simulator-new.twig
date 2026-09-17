@@ -105,10 +105,6 @@ rosterChecks.forEach(check => check.addEventListener('change', () => {
 speedInput.addEventListener('input', warnSpeed);
 carSelector.addEventListener('change', () => { warnSpeed(); syncEquipment(); });
 let carAnimating = false;
-const animationFinished = element => new Promise(resolve => {
-  element.addEventListener('animationend', resolve, {once: true});
-  setTimeout(resolve, 450);
-});
 const preloadImage = source => new Promise(resolve => {
   if (!source) return resolve();
   const image = new Image();
@@ -124,8 +120,6 @@ async function changeCar(direction) {
   const nextOption = carSelector.options[nextIndex];
   const nextImage = nextOption.dataset.image;
   await preloadImage(nextImage);
-  const outgoing = direction > 0 ? 'vehicle-slide-out-left' : 'vehicle-slide-out-right';
-  const incoming = direction > 0 ? 'vehicle-slide-in-right' : 'vehicle-slide-in-left';
   const incomingStage = document.createElement('div');
   incomingStage.className = 'vehicle-carousel-stage';
   if (nextImage) {
@@ -143,15 +137,28 @@ async function changeCar(direction) {
   }
   carSelectorStage.parentElement.append(incomingStage);
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const outgoingFinished = animationFinished(carSelectorStage);
-  const incomingFinished = animationFinished(incomingStage);
-  carSelectorStage.classList.add(outgoing);
-  incomingStage.classList.add(incoming);
-  await Promise.all([outgoingFinished, incomingFinished]);
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = reducedMotion ? 1 : 320;
+  const outgoingOffset = direction > 0 ? '-105%' : '105%';
+  const incomingOffset = direction > 0 ? '105%' : '-105%';
+  const timing = {duration, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards'};
+  const outgoingAnimation = carSelectorStage.animate([
+    {transform: 'translateX(0)', opacity: 1},
+    {transform: `translateX(${outgoingOffset})`, opacity: 0}
+  ], timing);
+  const incomingAnimation = incomingStage.animate([
+    {transform: `translateX(${incomingOffset})`, opacity: 0},
+    {transform: 'translateX(0)', opacity: 1}
+  ], timing);
+  await Promise.all([
+    outgoingAnimation.finished.catch(() => {}),
+    incomingAnimation.finished.catch(() => {})
+  ]);
   carSelector.selectedIndex = nextIndex;
   syncEquipment();
   warnSpeed();
-  carSelectorStage.classList.remove(outgoing);
+  outgoingAnimation.cancel();
+  incomingAnimation.cancel();
   incomingStage.remove();
   carAnimating = false;
 }
