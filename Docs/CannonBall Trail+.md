@@ -3,7 +3,8 @@
 **CannonBall Trail+** is a saved, real-time route simulation built on
 CannonMiner's enabled segment graph and collected measurements. Start a run with
 a departure time, vehicle fuel economy and capacity, target speed, and up to two
-randomly generated teammates. The signed-in user is always part of the roster.
+randomly selected teammates from a superadmin-managed name list. Their stats
+remain randomly generated. The signed-in user is always part of the roster.
 Realtime mode advances one simulated minute per real minute; arcade mode
 advances one simulated hour per real minute.
 
@@ -18,13 +19,18 @@ their stock top speed until a future equipped item enables the tuned top speed.
 The setup car builder supports up to the selected car's maximum fuel-cell count.
 Each $300 cell adds 20 gallons of capacity. A $1,500 cruising tune adds 5 MPG
 above 70 mph and enables the tuned top speed. $1,500 cruising tires add 1 MPG
-and halve the configured flat-tire chance. Radio Scanner ($250), Radar Scanner
+and halve the configured flat-tire chance. Every run includes one usable spare,
+and a $500 Additional Spare permits one more recoverable flat. Radio Scanner ($250), Radar Scanner
 ($600), and Radar Jammer ($1,000) can be equipped together. The Radar Scanner
 first reduces encounter probability; when a jammer is also installed it handles
 an encounter before the Radio Scanner. A Radar Jammer cannot be installed
 without a Radar Scanner. The live instrument panel represents installed
 equipment with symbols whose tooltips describe each modifier. The
 builder displays equipment modifiers and total cost without revealing base MPG.
+Each vehicle also has a superadmin-managed maximum load. Drivers and installed
+equipment consume configurable load values. Simulation setup displays remaining
+load as a percentage, and an overloaded car cannot begin a
+run. Superadmins can edit capacities with the other vehicle stats.
 The Radio Scanner has an equal chance to produce an early slowdown/pass or
 continue to the normal police result. The Radar Scanner halves the configured
 police-event chance. The Radar Jammer yields a 25% slowdown/pass, 25% normal
@@ -74,7 +80,9 @@ and wind events favor plains, mountain, and western routes. Road
 events can add a bounded delay, with driving and co-pilot skill reducing their
 impact. A flat tire includes controlled deceleration and acceleration around a
 10-to-15-minute repair. Repair time uses the entire crew's average effective
-co-piloting skill at the time of the flat, including fatigue reductions. Police
+co-piloting skill at the time of the flat, including fatigue reductions. The
+first flat is repairable; subsequent flats end the run once the standard spare
+and any equipped Additional Spare have been consumed. Police
 events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Each segment has three independently rolled event windows,

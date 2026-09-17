@@ -3,17 +3,18 @@
 {% if error %}<p class="alert">{{ error }}</p>{% endif %}
 <form method="post" class="simulation-setup"><input type="hidden" name="_token" value="{{ csrf }}">
 <fieldset><legend>Run</legend><div class="settings-grid"><label>Departure date and time <span>New York time</span><input type="datetime-local" name="departure" value="{{ default_departure }}" required></label><label>Simulation speed<select name="mode"><option value="arcade">Arcade | 1 hour = 1 minute</option><option value="realtime">Realtime | 1 minute = 1 minute</option></select></label><label>Initial target speed <span>mph</span><input type="number" name="speed" min="20" max="250" step="1" value="110" required></label></div></fieldset>
-<fieldset><legend>Car</legend><div class="vehicle-carousel"><button id="car-previous" class="vehicle-carousel-arrow" type="button" aria-label="Previous vehicle" title="Previous vehicle">&larr;</button><div class="vehicle-carousel-selection" aria-live="polite"><div class="vehicle-carousel-viewport"><div id="car-selector-stage" class="vehicle-carousel-stage"><img id="car-selector-image" width="128" height="128" alt="" hidden><span id="car-selector-placeholder" aria-hidden="true">&#x1f697;</span></div></div><strong id="car-selector-name"></strong></div><button id="car-next" class="vehicle-carousel-arrow" type="button" aria-label="Next vehicle" title="Next vehicle">&rarr;</button><label class="visually-hidden" for="car-selector">Selected vehicle</label><select name="car" id="car-selector" class="visually-hidden" required tabindex="-1" aria-hidden="true">{% for car in cars %}<option value="{{ car.id }}" data-top="{{ car.top_speed }}" data-tuned-top="{{ car.tuned_top_speed }}" data-max-fuel-cells="{{ car.max_fuel_cells }}" data-image="{{ car.image_path|default('') }}">{{ car.name }}</option>{% endfor %}</select></div></fieldset>
+<fieldset><legend>Car</legend><div class="vehicle-carousel"><button id="car-previous" class="vehicle-carousel-arrow" type="button" aria-label="Previous vehicle" title="Previous vehicle">&larr;</button><div class="vehicle-carousel-selection" aria-live="polite"><div class="vehicle-carousel-viewport"><div id="car-selector-stage" class="vehicle-carousel-stage"><img id="car-selector-image" width="128" height="128" alt="" hidden><span id="car-selector-placeholder" aria-hidden="true">&#x1f697;</span></div></div><strong id="car-selector-name"></strong></div><button id="car-next" class="vehicle-carousel-arrow" type="button" aria-label="Next vehicle" title="Next vehicle">&rarr;</button><label class="visually-hidden" for="car-selector">Selected vehicle</label><select name="car" id="car-selector" class="visually-hidden" required tabindex="-1" aria-hidden="true">{% for car in cars %}<option value="{{ car.id }}" data-top="{{ car.top_speed }}" data-tuned-top="{{ car.tuned_top_speed }}" data-max-fuel-cells="{{ car.max_fuel_cells }}" data-max-load="{{ car.max_load }}" data-image="{{ car.image_path|default('') }}">{{ car.name }}</option>{% endfor %}</select></div><div id="vehicle-load" class="vehicle-load"><div><span>Remaining car load</span><strong id="vehicle-load-value">--</strong></div><div class="vehicle-load-track"><i id="vehicle-load-bar"></i></div><small id="vehicle-load-warning" hidden>The selected crew and equipment exceed this car's maximum load.</small></div></fieldset>
 <fieldset><legend>Car builder</legend><div class="equipment-grid">
 <div class="equipment-stepper"><div><strong>&#x26fd; Fuel cells</strong><span>+20 gal capacity each | $300 each</span></div><div><button type="button" id="fuel-cell-remove" aria-label="Remove fuel cell" title="Remove fuel cell">−</button><output id="fuel-cell-count">0</output><button type="button" id="fuel-cell-add" aria-label="Add fuel cell" title="Add fuel cell">+</button><input type="hidden" id="fuel-cell-input" name="fuel_cells" value="0"></div></div>
 <label class="equipment-option"><input type="checkbox" name="cruising_tune" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6e0;&#xfe0f; Cruising tune</strong><small>+5 MPG above 70 mph; unlock tuned top speed | $1,500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="cruising_tires" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6de; Cruising tires</strong><small>+1 MPG; −50% flat-tire chance | $1,500</small></span></label>
+<label class="equipment-option"><input type="checkbox" name="additional_spare" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6de; Additional Spare</strong><small>Allows one additional recoverable flat tire | $500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radio_scanner" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f4fb; Radio Scanner</strong><small>Early warning response | $250</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radar_scanner" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f4e1; Radar Scanner</strong><small>−50% police encounter chance | $600</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radar_jammer" value="yes" disabled><i aria-hidden="true"></i><span><strong>&#x1f6e1;&#xfe0f; Radar Jammer</strong><small>Requires Radar Scanner; active police countermeasure | $1,000</small></span></label>
 </div><div class="equipment-summary"><div><p class="kicker">Modifiers</p><ul id="equipment-modifiers"><li>No equipment modifiers</li></ul></div><div><span>Total equipment cost</span><strong id="equipment-cost">$0</strong></div></div></fieldset>
 <fieldset><legend>Drivers</legend><div class="driver-roster">{% for driver in roster %}<label class="driver-option {{ driver.required?'required':'' }}">{% if not driver.required %}<input type="checkbox" name="drivers[]" value="{{ driver.id }}"><i aria-hidden="true"></i>{% endif %}<span><strong>{{ driver.name }}{% if driver.required %} | You{% endif %}</strong><small>Endurance {{ driver.endurance }} | Driving {{ driver.driving }} | Co-piloting {{ driver.copilot }}</small></span></label>{% endfor %}</div><label class="initial-driver">Initial driver<select name="initial_driver" required>{% for driver in roster %}<option value="{{ driver.id }}" data-optional="{{ driver.required?'no':'yes' }}" {{ driver.required?'selected':'disabled' }}>{{ driver.name }}{% if driver.required %} (you){% endif %}</option>{% endfor %}</select></label><a class="result-tool-link" href="?regenerate=1">Generate another roster</a></fieldset>
-<button class="simulator-primary">Begin simulation</button></form>
+<button id="begin-simulation" class="simulator-primary">Begin simulation</button></form>
 <dialog id="setup-speed-warning-120"><div class="decision-heading"><p class="kicker">High-speed warning</p><h2>The road just got serious</h2></div><p>This car can now run beyond 120 mph. The scenery is blurring, the fuel gauge is nervous, and one bad roll can end the party before Portofino. The chance of a crash has increased.</p><div class="decision-options"><button class="decision-ok" type="button">I understand</button></div></dialog>
 <dialog id="setup-speed-warning-145"><div class="decision-heading"><p class="kicker">Higher-speed warning</p><h2>Physics has entered the chat</h2></div><p>Beyond 145 mph, confidence is not a safety system. A second independent crash check now joins the first, and either one can turn the Portofino party into a very short summary screen. The chance of a crash has increased again.</p><div class="decision-options"><button class="decision-ok" type="button">I understand</button></div></dialog>
 <script>
@@ -29,6 +30,7 @@ const fuelCellInput = document.getElementById('fuel-cell-input');
 const fuelCellCount = document.getElementById('fuel-cell-count');
 const tuneInput = document.querySelector('[name=cruising_tune]');
 const tiresInput = document.querySelector('[name=cruising_tires]');
+const additionalSpareInput = document.querySelector('[name=additional_spare]');
 const radioInput = document.querySelector('[name=radio_scanner]');
 const radarInput = document.querySelector('[name=radar_scanner]');
 const jammerInput = document.querySelector('[name=radar_jammer]');
@@ -38,6 +40,29 @@ const speedWarnings = {
 };
 const acknowledgedSpeedWarnings = new Set();
 const speedWarningQueue = [];
+const loadCosts = {{ load_costs|json_encode|raw }};
+
+function syncLoad() {
+  const car = carSelector.selectedOptions[0];
+  const maximum = Number(car.dataset.maxLoad);
+  const drivers = 1 + rosterChecks.filter(check => check.checked).length;
+  const used = drivers * Number(loadCosts.driver) + Number(fuelCellInput.value) * Number(loadCosts.fuel_cell)
+    + (additionalSpareInput.checked ? Number(loadCosts.additional_spare) : 0)
+    + (tiresInput.checked ? Number(loadCosts.cruising_tires) : 0)
+    + (tuneInput.checked ? Number(loadCosts.cruising_tune) : 0)
+    + (radioInput.checked ? Number(loadCosts.radio_scanner) : 0)
+    + (radarInput.checked ? Number(loadCosts.radar_scanner) : 0)
+    + (jammerInput.checked ? Number(loadCosts.radar_jammer) : 0);
+  const remaining = maximum - used;
+  const percent = maximum > 0 ? remaining / maximum * 100 : -100;
+  document.getElementById('vehicle-load-value').textContent = `${percent.toFixed(0)}%`;
+  const bar = document.getElementById('vehicle-load-bar');
+  bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  bar.style.background = remaining < 0 ? 'var(--red)' : percent < 20 ? '#f0b429' : 'var(--green)';
+  document.getElementById('vehicle-load').classList.toggle('overloaded', remaining < 0);
+  document.getElementById('vehicle-load-warning').hidden = remaining >= 0;
+  document.getElementById('begin-simulation').disabled = remaining < 0;
+}
 
 function syncDrivers() {
   rosterChecks.forEach(check => {
@@ -45,6 +70,7 @@ function syncDrivers() {
     option.disabled = !check.checked;
   });
   if (initialDriver.selectedOptions[0].disabled) initialDriver.value = 'self';
+  syncLoad();
 }
 
 function showNextSpeedWarning() {
@@ -85,17 +111,19 @@ function syncEquipment() {
   if (cells) modifiers.push(`+${cells * 20} gal fuel capacity`);
   if (tuneInput.checked) modifiers.push('+5 MPG above 70 mph; tuned top speed unlocked');
   if (tiresInput.checked) modifiers.push('+1 MPG; flat-tire chance reduced 50%');
+  if (additionalSpareInput.checked) modifiers.push('+1 recoverable flat tire');
   if (radioInput.checked) modifiers.push('Radio Scanner police response');
   if (radarInput.checked) modifiers.push('Police encounter chance reduced 50%');
   if (jammerInput.checked) modifiers.push('Radar Jammer police response');
   document.getElementById('equipment-modifiers').innerHTML = (modifiers.length ? modifiers : ['No equipment modifiers'])
     .map(item => `<li>${item}</li>`).join('');
 
-  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tiresInput.checked ? 1500 : 0)
+  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tiresInput.checked ? 1500 : 0) + (additionalSpareInput.checked ? 500 : 0)
     + (radioInput.checked ? 250 : 0) + (radarInput.checked ? 600 : 0) + (jammerInput.checked ? 1000 : 0);
   document.getElementById('equipment-cost').textContent = new Intl.NumberFormat(undefined, {
     style: 'currency', currency: 'USD', maximumFractionDigits: 0
   }).format(cost);
+  syncLoad();
 }
 
 rosterChecks.forEach(check => check.addEventListener('change', () => {
@@ -173,7 +201,7 @@ document.getElementById('fuel-cell-add').addEventListener('click', () => {
   syncEquipment();
 });
 tuneInput.addEventListener('change', () => { syncEquipment(); warnSpeed(); });
-[tiresInput, radioInput, radarInput, jammerInput].forEach(control => control.addEventListener('change', syncEquipment));
+[tiresInput, additionalSpareInput, radioInput, radarInput, jammerInput].forEach(control => control.addEventListener('change', syncEquipment));
 Object.values(speedWarnings).forEach(dialog => dialog.querySelector('button').addEventListener('click', () => {
   dialog.close();
   showNextSpeedWarning();

@@ -11,20 +11,37 @@ INSERT INTO settings (key, value) VALUES
 ('simulator_crash_base_percent', '1'), ('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
 ('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'), ('simulator_mechanical_failure_percent', '1'),
 ('simulator_headwind_percent', '1'), ('simulator_tailwind_percent', '1'),
-('simulator_police_percent', '5'), ('simulator_road_event_percent', '5')
+('simulator_police_percent', '5'), ('simulator_road_event_percent', '5'),
+('simulator_load_driver', '200'), ('simulator_load_fuel_cell', '200'),
+('simulator_load_additional_spare', '200'), ('simulator_load_cruising_tires', '0'),
+('simulator_load_cruising_tune', '50'), ('simulator_load_radio_scanner', '1'),
+('simulator_load_radar_scanner', '5'), ('simulator_load_radar_jammer', '25'),
+('simulator_driver_names', E'Doug Tabbut\nDunadel Daryoush\nArne Toman\nChris Duerden\nSafi Barqawi\nChris Benvie\nJames Allen\nKale Odhner\nSamuel Lurie\nChris Allen\nMatt Fried\nChristopher Stowell\nBerkeley Chadwick\nCarl Dietz\nJason Adkins\nMark Spence\nSean Petr\nDave Black\nDan Huang\nEd Bolian\nStephen Thomas\nTommy Thomas\nSteven Groh\nTroy Schneider\nAndrew Calore\nRyan Stark\nDavid Risch\nNik Krueger\nWesley Vigh\nChristopher Michael\nTommy Davies\nRob Pickup\nRobert Pryer\nRomuald Clariond\nSeth Rose\nCameron Davis\nAaron Tulin\nAlex Roy\nDave Maher\nCory Welles\nJohn Levie\nJoe Petralia\nYumi Dietz\nBen Preston\nElijah Dietz\nTaylor Hull\nHunter Robinson\nAndrew Rodgers\nScott Saier\nTim Daley\nWilliam Shafer\nMiles Compton\nSyed Ahmed\nTravis Hilton\nArt Ashmore\nFred Ashmore\nChris Taylor\nAdam Swetlik\nRichard Rawlings\nDennis Collins')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO simulator_vehicles
-(id,name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells) VALUES
-('audi-s6','2016 Audi S6',18,27,5,19.8,155,175,2),
-('bmw-m5-competition','BMW M5 Competition',15,21,5.5,20.1,155,190,3),
-('cadillac-ats','2016 Cadillac ATS',22,26,8.5,16,140,155,2),
-('mercedes-cl55-amg','2004 Mercedes CL55 AMG',13,19,7.2,23.2,155,186,3),
-('ford-crown-victoria','2007 Ford Crown Victoria',15,23,12,19,140,140,3),
-('saab-9-5-aero','2008 Saab 9-5 Aero',17,26,11.7,18,155,160,1),
-('toyota-celica-gts','2001 Toyota Celica GTS',20,29,17.5,14.5,115,140,2),
-('lexus-sc400','1995 Lexus SC400',16,20,10,20.6,135,150,3)
+(id,name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells,max_load) VALUES
+('audi-s6','2016 Audi S6',18,27,5,19.8,155,175,2,1300),
+('bmw-m5-competition','BMW M5 Competition',15,21,5.5,20.1,155,190,3,1200),
+('cadillac-ats','2016 Cadillac ATS',22,26,8.5,16,140,155,2,1300),
+('mercedes-cl55-amg','2004 Mercedes CL55 AMG',13,19,7.2,23.2,155,186,3,900),
+('ford-crown-victoria','2007 Ford Crown Victoria',15,23,12,19,140,140,3,1400),
+('saab-9-5-aero','2008 Saab 9-5 Aero',17,26,11.7,18,155,160,1,1200),
+('toyota-celica-gts','2001 Toyota Celica GTS',20,29,17.5,14.5,115,140,2,800),
+('lexus-sc400','1995 Lexus SC400',16,20,10,20.6,135,150,3,1000)
 ON CONFLICT (id) DO NOTHING;
+
+WITH load_capacity_upgrade AS (
+    INSERT INTO settings (key, value) VALUES ('simulator_vehicle_load_defaults_version', '1')
+    ON CONFLICT (key) DO NOTHING RETURNING key
+)
+UPDATE simulator_vehicles SET max_load=CASE id
+  WHEN 'audi-s6' THEN 1300 WHEN 'bmw-m5-competition' THEN 1200
+  WHEN 'cadillac-ats' THEN 1300 WHEN 'mercedes-cl55-amg' THEN 900
+  WHEN 'ford-crown-victoria' THEN 1400 WHEN 'saab-9-5-aero' THEN 1200
+  WHEN 'toyota-celica-gts' THEN 800 WHEN 'lexus-sc400' THEN 1000
+  ELSE max_load END, updated_at=now()
+WHERE EXISTS (SELECT 1 FROM load_capacity_upgrade);
 
 WITH crown_victoria_mpg_fix AS (
     INSERT INTO settings (key, value)
