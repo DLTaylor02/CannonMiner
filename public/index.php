@@ -78,7 +78,7 @@ $vehicleImage = static function (Request $request) use ($root): ?string {
     if($upload->getError()!==UPLOAD_ERR_OK)throw new RuntimeException('The vehicle image upload failed.');
     $stream=$upload->getStream();if($stream->isSeekable())$stream->rewind();$contents=$stream->getContents();
     if($contents===''||strlen($contents)>262144)throw new RuntimeException('Vehicle images must be PNG files no larger than 256 KB.');
-    $info=@getimagesizefromstring($contents);if(!$info||($info['mime']??'')!=='image/png'||$info[0]!==48||$info[1]!==48)throw new RuntimeException('Vehicle images must be exactly 48 by 48 pixels in PNG format.');
+    $info=@getimagesizefromstring($contents);if(!$info||($info['mime']??'')!=='image/png'||$info[0]!==128||$info[1]!==128)throw new RuntimeException('Vehicle images must be exactly 128 by 128 pixels in PNG format.');
     $colorType=isset($contents[25])?ord($contents[25]):-1;if(!in_array($colorType,[4,6],true)&&strpos($contents,'tRNS')===false)throw new RuntimeException('Vehicle PNG images must include transparency.');
     $directory=$root.'/public/uploads/vehicles';if(!is_dir($directory)&&!mkdir($directory,0755,true)&&!is_dir($directory))throw new RuntimeException('The vehicle image directory is unavailable.');
     $filename=bin2hex(random_bytes(16)).'.png';if(file_put_contents($directory.'/'.$filename,$contents,LOCK_EX)===false)throw new RuntimeException('The vehicle image could not be saved.');return'/uploads/vehicles/'.$filename;
