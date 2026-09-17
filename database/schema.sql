@@ -8,13 +8,15 @@ CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('superadmin','admin','user')),
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('superadmin','admin','user','gamer')),
     theme TEXT NOT NULL DEFAULT 'adaptive' CHECK (theme IN ('light','dark','adaptive')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'adaptive';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('superadmin','admin','user','gamer'));
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users WHERE role='superadmin') AND EXISTS (SELECT 1 FROM users) THEN
     UPDATE users SET role='superadmin' WHERE id=(SELECT min(id) FROM users);
@@ -24,6 +26,21 @@ DO $$ BEGIN
     AND id<>(SELECT min(id) FROM users WHERE role='superadmin');
 END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_superadmin_idx ON users ((role)) WHERE role='superadmin';
+
+CREATE TABLE IF NOT EXISTS simulator_vehicles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    mpg_below_35 NUMERIC(8,2) NOT NULL CHECK (mpg_below_35 > 0),
+    mpg_35_70 NUMERIC(8,2) NOT NULL CHECK (mpg_35_70 > 0),
+    mpg_above_70 NUMERIC(8,2) NOT NULL CHECK (mpg_above_70 > 0),
+    capacity NUMERIC(8,2) NOT NULL CHECK (capacity > 0),
+    top_speed NUMERIC(8,2) NOT NULL CHECK (top_speed > 0),
+    tuned_top_speed NUMERIC(8,2) NOT NULL CHECK (tuned_top_speed > 0),
+    max_fuel_cells INTEGER NOT NULL CHECK (max_fuel_cells BETWEEN 0 AND 20),
+    image_path TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS login_attempts (
     id BIGSERIAL PRIMARY KEY,

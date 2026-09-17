@@ -37,6 +37,9 @@ try {
         if (!is_dir($sessionPath) || !is_writable($sessionPath) || ini_get('session.use_strict_mode') !== '1' || ini_get('session.cookie_httponly') !== '1') {
             throw new RuntimeException('Dedicated session configuration check failed');
         }
+        if (!is_dir($root . '/public/uploads/vehicles') || !is_writable($root . '/public/uploads/vehicles')) {
+            throw new RuntimeException('Vehicle image storage check failed');
+        }
         $errorLog = (string) ini_get('error_log');
         if (!str_starts_with($errorLog, '/var/log/cannonminer/') || !is_writable(dirname($errorLog))) {
             throw new RuntimeException('Dedicated PHP logging configuration check failed');
@@ -46,7 +49,7 @@ try {
     require $root . '/vendor/autoload.php';
     $pdo = CannonMiner\Database::connect($root);
     if ((int) $pdo->query('SELECT 1')->fetchColumn() !== 1) throw new RuntimeException('Database connectivity check failed');
-    $tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','planning_jobs','simulations','simulation_events','system_metrics','storage_metrics','google_api_requests'];
+    $tables = ['settings','users','login_attempts','segments','measurements','collection_runs','legacy_measurement_imports','analysis_jobs','planning_jobs','simulator_vehicles','simulations','simulation_events','system_metrics','storage_metrics','google_api_requests'];
     $statement = $pdo->prepare('SELECT to_regclass(?) IS NOT NULL');
     foreach ($tables as $table) {
         $statement->execute(['public.' . $table]);

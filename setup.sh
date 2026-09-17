@@ -120,7 +120,7 @@ if [ "${CANNONMINER_DEPLOYED:-0}" != "1" ]; then
     info "Deploying application to $DEPLOY_DIR"
     $SUDO install -d -m 0755 "$DEPLOY_DIR"
     $SUDO rsync -a --delete \
-      --exclude '.git/' --exclude '.env' --exclude 'vendor/' --exclude 'var/' \
+      --exclude '.git/' --exclude '.env' --exclude 'vendor/' --exclude 'var/' --exclude 'public/uploads/' \
       --exclude 'debian-php-postgres-nginx-setup.sh' \
       "$ROOT_DIR/" "$DEPLOY_DIR/"
     if [ -f "$ROOT_DIR/.env" ] && [ ! -f "$DEPLOY_DIR/.env" ]; then
@@ -294,6 +294,7 @@ $SUDO chmod 0751 "$ROOT_DIR"
 $SUDO chmod 0750 "$ROOT_DIR/setup.sh"
 $SUDO find "$ROOT_DIR/public" -type d -exec chmod 0755 {} +
 $SUDO find "$ROOT_DIR/public" -type f -exec chmod 0644 {} +
+$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0755 "$ROOT_DIR/public/uploads/vehicles"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$ROOT_DIR/var"
 $SUDO "$PHP_FPM_BIN" -t
 $SUDO systemctl reload "$PHP_FPM_SERVICE"

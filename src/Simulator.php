@@ -10,16 +10,6 @@ use RuntimeException;
 final class Simulator
 {
     private const NAMES=['Alex Mercer','Jordan Vale','Casey Holt','Morgan Reed','Taylor Knox','Riley Stone','Avery Lane','Cameron Pike','Drew Hart','Parker Shaw','Quinn Hayes','Skyler Dean'];
-    private const CARS=[
-        'audi-s6'=>['name'=>'2016 Audi S6','mpg_below_35'=>18.0,'mpg_35_70'=>27.0,'mpg_above_70'=>5.0,'capacity'=>19.8,'top_speed'=>155.0,'tuned_top_speed'=>175.0,'max_fuel_cells'=>2],
-        'bmw-m5-competition'=>['name'=>'BMW M5 Competition','mpg_below_35'=>15.0,'mpg_35_70'=>21.0,'mpg_above_70'=>5.5,'capacity'=>20.1,'top_speed'=>155.0,'tuned_top_speed'=>190.0,'max_fuel_cells'=>3],
-        'cadillac-ats'=>['name'=>'2016 Cadillac ATS','mpg_below_35'=>22.0,'mpg_35_70'=>26.0,'mpg_above_70'=>8.5,'capacity'=>16.0,'top_speed'=>140.0,'tuned_top_speed'=>155.0,'max_fuel_cells'=>2],
-        'mercedes-cl55-amg'=>['name'=>'2004 Mercedes CL55 AMG','mpg_below_35'=>13.0,'mpg_35_70'=>19.0,'mpg_above_70'=>7.2,'capacity'=>23.2,'top_speed'=>155.0,'tuned_top_speed'=>186.0,'max_fuel_cells'=>3],
-        'ford-crown-victoria'=>['name'=>'2007 Ford Crown Victoria','mpg_below_35'=>15.0,'mpg_35_70'=>23.0,'mpg_above_70'=>121.0,'capacity'=>19.0,'top_speed'=>140.0,'tuned_top_speed'=>140.0,'max_fuel_cells'=>3],
-        'saab-9-5-aero'=>['name'=>'2008 Saab 9-5 Aero','mpg_below_35'=>17.0,'mpg_35_70'=>26.0,'mpg_above_70'=>11.7,'capacity'=>18.0,'top_speed'=>155.0,'tuned_top_speed'=>160.0,'max_fuel_cells'=>1],
-        'toyota-celica-gts'=>['name'=>'2001 Toyota Celica GTS','mpg_below_35'=>20.0,'mpg_35_70'=>29.0,'mpg_above_70'=>17.5,'capacity'=>14.5,'top_speed'=>115.0,'tuned_top_speed'=>140.0,'max_fuel_cells'=>2],
-        'lexus-sc400'=>['name'=>'1995 Lexus SC400','mpg_below_35'=>16.0,'mpg_35_70'=>20.0,'mpg_above_70'=>10.0,'capacity'=>20.6,'top_speed'=>135.0,'tuned_top_speed'=>150.0,'max_fuel_cells'=>3],
-    ];
     public const LOCATIONS=['redball'=>'Redball Garage, NY','portofino'=>'Portofino Marina, CA','bar'=>'Barstow, CA','big'=>'Big Springs, NE','cole'=>'Columbus East, OH','coln'=>'Columbus North, OH','cov'=>'Cove Fort, UT','den'=>'Denver, CO','elr'=>'El Reno, OK','har'=>'Harrisburg, PA','nash'=>'Nashville, TN','stl'=>'St. Louis, IL','you'=>'Youngstown, OH'];
 
     public function __construct(private PDO $pdo,private RouteGraph $graph,private SimulationTrafficProvider $traffic,private Settings $settings){}
@@ -45,7 +35,7 @@ final class Simulator
         return implode(' → ',array_map([self::class,'locationName'],$nodes));
     }
 
-    public static function cars():array{$cars=[];foreach(self::CARS as $id=>$car)$cars[]=['id'=>$id]+$car;return$cars;}
+    public function cars():array{$rows=$this->pdo->query('SELECT id,name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells,image_path FROM simulator_vehicles ORDER BY name')->fetchAll();foreach($rows as &$row){foreach(['mpg_below_35','mpg_35_70','mpg_above_70','capacity','top_speed','tuned_top_speed'] as $key)$row[$key]=(float)$row[$key];$row['max_fuel_cells']=(int)$row['max_fuel_cells'];}unset($row);return$rows;}
 
     public function create(int $userId,array $input,array $roster):string
     {
@@ -53,7 +43,7 @@ final class Simulator
         $departureText=(string)($input['departure']??'');$departure=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',$departureText,new \DateTimeZone('America/New_York'));
         if(!$departure||$departure->format('Y-m-d\TH:i')!==$departureText)throw new RuntimeException('Choose a valid departure date and time.');
         if(!$this->traffic->hasEvidenceForDate($departure))throw new RuntimeException('No directly supported traffic data is available for the selected departure day. Choose another date.');
-        $carId=(string)($input['car']??'');$car=self::CARS[$carId]??null;if(!$car)throw new RuntimeException('Choose an available car.');$speed=max(20,min(250,(float)($input['speed']??110)));
+        $carId=(string)($input['car']??'');$lookup=$this->pdo->prepare('SELECT name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells FROM simulator_vehicles WHERE id=?');$lookup->execute([$carId]);$car=$lookup->fetch();if(!$car)throw new RuntimeException('Choose an available car.');foreach(['mpg_below_35','mpg_35_70','mpg_above_70','capacity','top_speed','tuned_top_speed'] as $key)$car[$key]=(float)$car[$key];$car['max_fuel_cells']=(int)$car['max_fuel_cells'];$speed=max(20,min(250,(float)($input['speed']??110)));
         $fuelCells=max(0,min((int)$car['max_fuel_cells'],(int)($input['fuel_cells']??0)));$tuned=isset($input['cruising_tune']);$cruisingTires=isset($input['cruising_tires']);$radioScanner=isset($input['radio_scanner']);$radarScanner=isset($input['radar_scanner']);$radarJammer=isset($input['radar_jammer']);if($radarJammer&&!$radarScanner)throw new RuntimeException('The Radar Jammer requires a Radar Scanner.');$equipmentCost=$fuelCells*300+($tuned?1500:0)+($cruisingTires?1500:0)+($radioScanner?250:0)+($radarScanner?600:0)+($radarJammer?1000:0);$equipment=['fuel_cells'=>$fuelCells,'cruising_tune'=>$tuned,'cruising_tires'=>$cruisingTires,'radio_scanner'=>$radioScanner,'radar_scanner'=>$radarScanner,'radar_jammer'=>$radarJammer,'cost'=>$equipmentCost];
         $selected=array_map('strval',(array)($input['drivers']??[]));$initialDriver=(string)($input['initial_driver']??'self');$drivers=[];
         foreach($roster as $candidate)if($candidate['required']||in_array($candidate['id'],$selected,true))$drivers[]=$candidate+['role'=>$candidate['id']===$initialDriver?'driver':'rest','fatigue'=>0.0,'rest_seconds'=>0.0,'locked_rest'=>false];

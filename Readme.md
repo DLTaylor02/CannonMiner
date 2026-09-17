@@ -78,7 +78,8 @@ composer reset-superadmin-password
 ```
 - **Web admin**s can manage segments, users, and the default maximum risk. They cannot read or change the Google key, collection interval, or other collection settings.
 - **User**s can run route analysis and view avoid trends. Route jobs always enforce the configured maximum risk for this role.
-- New and changed passwords for web admins and users must meet the password policy configured by the superadmin. Existing passwords continue to work until an administrator selects **Require change** for that account.
+- **Gamer**s can only use CannonBall Trail+ and change their own password. They cannot access traffic analysis, planning, calendar, tools, settings, or user management.
+- New and changed passwords for web admins, users, and gamers must meet the password policy configured by the superadmin. Existing passwords continue to work until an administrator selects **Require change** for that account.
 - Sign-in failures are limited by both username and client address. The superadmin configures the attempt limit and temporary lockout duration under Settings.
 - Passwords are checked against the Have I Been Pwned Pwned Passwords range service. Only the first five characters of a locally calculated SHA-1 hash are sent. If the service is unavailable, a locally valid password is accepted and the user receives an advisory.
 

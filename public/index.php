@@ -42,8 +42,12 @@ $render = static function (Request $request, Response $response, string $templat
 };
 $guard = static function (Request $request, RequestHandlerInterface $handler) use (&$identity): Response {
     if ($identity) {
-        if ($identity['role']!=='superadmin' && $identity['must_change_password'] && !in_array($request->getUri()->getPath(),['/password','/logout'],true)) {
+        $path=$request->getUri()->getPath();
+        if ($identity['role']!=='superadmin' && $identity['must_change_password'] && !in_array($path,['/password','/logout'],true)) {
             return (new \Slim\Psr7\Response())->withHeader('Location','/password')->withStatus(302);
+        }
+        if ($identity['role']==='gamer' && !in_array($path,['/password','/logout'],true) && !preg_match('#^/simulator(?:/|$)#D',$path)) {
+            return (new \Slim\Psr7\Response())->withHeader('Location','/simulator')->withStatus(302);
         }
         return $handler->handle($request);
     }
@@ -54,10 +58,32 @@ $requireAdmin = static function (Request $request, RequestHandlerInterface $hand
     if ($identity && in_array($identity['role'],['admin','superadmin'],true)) return $handler->handle($request);
     return (new \Slim\Psr7\Response())->withHeader('Location','/')->withStatus(302);
 };
+$requireSuperadmin = static function (Request $request, RequestHandlerInterface $handler) use (&$identity): Response {
+    if ($identity && $identity['role']==='superadmin') return $handler->handle($request);
+    return (new \Slim\Psr7\Response())->withHeader('Location','/settings')->withStatus(302);
+};
 $csrf = static function (Request $request): void {
     $token = (string)(($request->getParsedBody() ?? [])['_token'] ?? '');
     if (!hash_equals($_SESSION['csrf'] ?? '', $token)) throw new RuntimeException('Your session expired. Please try again.');
 };
+$vehicleInput = static function (array $body): array {
+    $name=trim((string)($body['name']??''));if($name===''||strlen($name)>120)throw new RuntimeException('Vehicle name must be between 1 and 120 characters.');
+    $values=['mpg_below_35'=>(float)($body['mpg_below_35']??0),'mpg_35_70'=>(float)($body['mpg_35_70']??0),'mpg_above_70'=>(float)($body['mpg_above_70']??0),'capacity'=>(float)($body['capacity']??0),'top_speed'=>(float)($body['top_speed']??0),'tuned_top_speed'=>(float)($body['tuned_top_speed']??0)];
+    foreach($values as $value)if(!is_finite($value)||$value<=0||$value>500)throw new RuntimeException('Vehicle MPG, capacity, and speed values must be greater than 0 and no more than 500.');
+    if($values['tuned_top_speed']<$values['top_speed'])throw new RuntimeException('Tuned top speed cannot be lower than the stock top speed.');
+    return['name'=>$name]+$values+['max_fuel_cells'=>max(0,min(20,(int)($body['max_fuel_cells']??0)))];
+};
+$vehicleImage = static function (Request $request) use ($root): ?string {
+    $upload=$request->getUploadedFiles()['image']??null;if(!$upload||$upload->getError()===UPLOAD_ERR_NO_FILE)return null;
+    if($upload->getError()!==UPLOAD_ERR_OK)throw new RuntimeException('The vehicle image upload failed.');
+    $stream=$upload->getStream();if($stream->isSeekable())$stream->rewind();$contents=$stream->getContents();
+    if($contents===''||strlen($contents)>262144)throw new RuntimeException('Vehicle images must be PNG files no larger than 256 KB.');
+    $info=@getimagesizefromstring($contents);if(!$info||($info['mime']??'')!=='image/png'||$info[0]!==48||$info[1]!==48)throw new RuntimeException('Vehicle images must be exactly 48 by 48 pixels in PNG format.');
+    $colorType=isset($contents[25])?ord($contents[25]):-1;if(!in_array($colorType,[4,6],true)&&strpos($contents,'tRNS')===false)throw new RuntimeException('Vehicle PNG images must include transparency.');
+    $directory=$root.'/public/uploads/vehicles';if(!is_dir($directory)&&!mkdir($directory,0755,true)&&!is_dir($directory))throw new RuntimeException('The vehicle image directory is unavailable.');
+    $filename=bin2hex(random_bytes(16)).'.png';if(file_put_contents($directory.'/'.$filename,$contents,LOCK_EX)===false)throw new RuntimeException('The vehicle image could not be saved.');return'/uploads/vehicles/'.$filename;
+};
+$deleteVehicleImage = static function (?string $path) use ($root): void {if($path&&preg_match('#^/uploads/vehicles/[a-f0-9]{32}\.png$#D',$path))@unlink($root.'/public'.$path);};
 
 $app->map(['GET','POST'], '/login', function (Request $request, Response $response) use ($pdo, $render, $loginLimiter): Response {
     $error = null;
@@ -73,7 +99,7 @@ $app->map(['GET','POST'], '/login', function (Request $request, Response $respon
             $loginLimiter->clear($username,$ip);
             session_regenerate_id(true); $_SESSION['user_id'] = $user['id']; $_SESSION['username'] = $user['username'];
             $_SESSION['csrf'] = bin2hex(random_bytes(24));
-            $destination=$user['role']!=='superadmin'&&$user['must_change_password']?'/password':'/';
+            $destination=$user['role']!=='superadmin'&&$user['must_change_password']?'/password':($user['role']==='gamer'?'/simulator':'/');
             return $response->withHeader('Location',$destination)->withStatus(302);
         }
         $loginLimiter->fail($username,$ip);
@@ -327,7 +353,7 @@ $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $re
     $roster=(array)($_SESSION['simulator_roster']??Simulator::roster($identity['username']));$error=null;
     if($request->getMethod()==='POST')try{$csrf($request);$id=$simulator->create((int)$identity['id'],(array)$request->getParsedBody(),$roster);unset($_SESSION['simulator_roster']);return$response->withHeader('Location','/simulator/'.$id)->withStatus(302);}catch(Throwable $exception){$error=$exception->getMessage();}
     $defaultDeparture=(new DateTimeImmutable('tomorrow 06:00',new DateTimeZone('America/New_York')))->format('Y-m-d\TH:i');
-    return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'cars'=>Simulator::cars(),'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
+    return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'cars'=>$simulator->cars(),'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
@@ -636,13 +662,27 @@ $app->post('/segments',function(Request $request,Response $response)use($pdo,$cs
     }
     return $response->withHeader('Location','/settings')->withStatus(302);
 })->add($requireAdmin)->add($guard);
+$app->map(['GET','POST'],'/settings/game',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf):Response{
+    $message=null;if($request->getMethod()==='POST'){$csrf($request);$body=(array)$request->getParsedBody();$values=[];foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$values[$key]=(string)max(0,min(100,(float)($body[$key]??$default)));$settings->save($values);$message='Game environment saved.';}
+    $values=$settings->all();foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$values[$key]??=(string)$default;
+    return$render($request,$response,'game-settings.twig',['settings'=>$values,'vehicles'=>$pdo->query('SELECT * FROM simulator_vehicles ORDER BY name')->fetchAll(),'message'=>$message,'csrf'=>$_SESSION['csrf']]);
+})->add($requireSuperadmin)->add($guard);
+$app->post('/settings/game/vehicles',function(Request $request,Response $response)use($pdo,$csrf,$vehicleInput,$vehicleImage,$deleteVehicleImage):Response{
+    $csrf($request);$image=null;try{$vehicle=$vehicleInput((array)$request->getParsedBody());$image=$vehicleImage($request);$id='vehicle-'.bin2hex(random_bytes(8));$statement=$pdo->prepare('INSERT INTO simulator_vehicles(id,name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells,image_path) VALUES (?,?,?,?,?,?,?,?,?,?)');$statement->execute([$id,$vehicle['name'],$vehicle['mpg_below_35'],$vehicle['mpg_35_70'],$vehicle['mpg_above_70'],$vehicle['capacity'],$vehicle['top_speed'],$vehicle['tuned_top_speed'],$vehicle['max_fuel_cells'],$image]);$_SESSION['advisory']='Vehicle added.';}catch(Throwable $error){$deleteVehicleImage($image);$_SESSION['notice']=$error->getMessage();}return$response->withHeader('Location','/settings/game')->withStatus(302);
+})->add($requireSuperadmin)->add($guard);
+$app->post('/settings/game/vehicles/{id}',function(Request $request,Response $response,array $args)use($pdo,$csrf,$vehicleInput,$vehicleImage,$deleteVehicleImage):Response{
+    $csrf($request);$id=(string)$args['id'];$lookup=$pdo->prepare('SELECT image_path FROM simulator_vehicles WHERE id=?');$lookup->execute([$id]);$old=$lookup->fetchColumn();if($old===false)return$response->withStatus(404);$image=null;try{$vehicle=$vehicleInput((array)$request->getParsedBody());$image=$vehicleImage($request);$statement=$pdo->prepare('UPDATE simulator_vehicles SET name=?,mpg_below_35=?,mpg_35_70=?,mpg_above_70=?,capacity=?,top_speed=?,tuned_top_speed=?,max_fuel_cells=?,image_path=COALESCE(?,image_path),updated_at=now() WHERE id=?');$statement->execute([$vehicle['name'],$vehicle['mpg_below_35'],$vehicle['mpg_35_70'],$vehicle['mpg_above_70'],$vehicle['capacity'],$vehicle['top_speed'],$vehicle['tuned_top_speed'],$vehicle['max_fuel_cells'],$image,$id]);if($image)$deleteVehicleImage((string)$old);$_SESSION['advisory']='Vehicle updated.';}catch(Throwable $error){$deleteVehicleImage($image);$_SESSION['notice']=$error->getMessage();}return$response->withHeader('Location','/settings/game')->withStatus(302);
+})->add($requireSuperadmin)->add($guard);
+$app->post('/settings/game/vehicles/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,$deleteVehicleImage):Response{
+    $csrf($request);if((int)$pdo->query('SELECT count(*) FROM simulator_vehicles')->fetchColumn()<=1){$_SESSION['notice']='At least one simulator vehicle must remain.';return$response->withHeader('Location','/settings/game')->withStatus(302);}$statement=$pdo->prepare('DELETE FROM simulator_vehicles WHERE id=? RETURNING image_path');$statement->execute([(string)$args['id']]);$image=$statement->fetchColumn();if($image!==false)$deleteVehicleImage((string)$image);return$response->withHeader('Location','/settings/game')->withStatus(302);
+})->add($requireSuperadmin)->add($guard);
 $app->map(['GET','POST'], '/settings', function (Request $request, Response $response) use ($pdo,$settings,$render,$csrf,&$identity): Response {
     $message = null;
     if ($request->getMethod() === 'POST') {
         if(!in_array($identity['role'],['admin','superadmin'],true))return$response->withStatus(403);
         $csrf($request); $body=(array)$request->getParsedBody(); unset($body['_token']);
         $allowed=['default_max_delay_risk'];
-        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','cruising_fuel_rate_gpm','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes','simulator_crash_120_percent','simulator_crash_145_percent','simulator_weather_percent','simulator_flat_tire_percent','simulator_headwind_percent','simulator_tailwind_percent','simulator_police_percent','simulator_road_event_percent']);
+        if($identity['role']==='superadmin')$allowed=array_merge($allowed,['dashboard_banner','google_maps_api_key','google_data_storage_authorized','collection_interval_minutes','timezone','default_speed_mph','candidate_routes','departure_interval_minutes','cruising_fuel_rate_gpm','login_rate_limit','login_lockout_minutes','password_min_strength','password_min_length','automation_enabled','automation_interval_minutes','automation_speed_mph','automation_profile','automation_max_risk','telemetry_interval_minutes']);
         $body=array_intersect_key($body,array_flip($allowed));
         $body['default_max_delay_risk']=(string)(max(0,min(100,(float)($body['default_max_delay_risk']??20)))/100);
         if($identity['role']==='superadmin'){
@@ -659,7 +699,6 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
             if(!in_array($body['automation_profile']??'',['balanced','fastest','reliability'],true))$body['automation_profile']='balanced';
             $body['automation_max_risk']=(string)(max(0,min(100,(float)($body['automation_max_risk']??20)))/100);
             $body['telemetry_interval_minutes']=(string)max(1,min(1440,(int)($body['telemetry_interval_minutes']??15)));
-            foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$body[$key]=(string)max(0,min(100,(float)($body[$key]??$default)));
             $body['google_data_storage_authorized']=isset($body['google_data_storage_authorized'])?'yes':'no';
             $submittedKey=trim((string)($body['google_maps_api_key']??''));if($submittedKey===''||$submittedKey==='************')unset($body['google_maps_api_key']);
         }
@@ -668,7 +707,6 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     $values=$settings->all();
     if(!isset($values['automation_interval_minutes']))$values['automation_interval_minutes']=(string)(max(1,min(168,(int)($values['automation_interval_hours']??1)))*60);
     $values['cruising_fuel_rate_gpm']??='10';
-    foreach(['simulator_crash_120_percent'=>14,'simulator_crash_145_percent'=>14,'simulator_weather_percent'=>5,'simulator_flat_tire_percent'=>5,'simulator_headwind_percent'=>1,'simulator_tailwind_percent'=>1,'simulator_police_percent'=>5,'simulator_road_event_percent'=>5] as $key=>$default)$values[$key]??=(string)$default;
     $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
     return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'message'=>$message,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
@@ -677,7 +715,7 @@ $app->map(['GET','POST'],'/users',function(Request $request,Response $response)u
     $message=$error=$warning=null;
     if($request->getMethod()==='POST'){
         $csrf($request);$body=(array)$request->getParsedBody();$role=(string)($body['role']??'user');
-        $allowed=['user','admin'];
+        $allowed=['user','gamer','admin'];
         $validation=$passwordPolicy->validate((string)($body['password']??''),trim((string)($body['username']??'')));
         if(!in_array($role,$allowed,true))$error='That role cannot be assigned.';
         elseif(!$validation['valid'])$error=implode(' ',$validation['errors']);
@@ -698,7 +736,7 @@ $app->post('/users/{id}',function(Request $request,Response $response,array $arg
     $csrf($request);$id=(int)$args['id'];$lookup=$pdo->prepare('SELECT username,role FROM users WHERE id=?');$lookup->execute([$id]);$target=$lookup->fetch();
     if(!$target||($target['role']==='superadmin'&&(int)$identity['id']!==$id))return $response->withHeader('Location','/users')->withStatus(302);
     $body=(array)$request->getParsedBody();$role=$target['role']==='superadmin'?'superadmin':(string)($body['role']??$target['role']);
-    if(!in_array($role,['user','admin'],true)&&$target['role']!=='superadmin')$role=(string)$target['role'];
+    if(!in_array($role,['user','gamer','admin'],true)&&$target['role']!=='superadmin')$role=(string)$target['role'];
     $password=(string)($body['password']??'');
     if($password!==''){
         $validation=$target['role']==='superadmin'?['valid'=>true,'errors'=>[],'warning'=>null]:$passwordPolicy->validate($password,$target['username']);
