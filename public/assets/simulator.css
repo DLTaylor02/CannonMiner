@@ -130,10 +130,11 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .decision-confirm-actions{display:flex;justify-content:center;gap:10px}
 .decision-options .decision-confirm-actions button{width:auto;min-width:120px;text-align:center}
 .simulation-summary #summary-reason{font-weight:750;text-align:center}.simulation-summary #summary-route{color:var(--muted);text-align:center}.summary-return{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:20px}
+.summary-loadout{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(0,1.3fr);gap:24px;margin-top:18px;padding:16px 0;border-block:1px solid var(--line)}.summary-loadout .kicker{margin:0 0 7px}.summary-loadout .kicker:not(:first-child){margin-top:16px}.summary-loadout ul{margin:0;padding-left:18px;color:var(--muted)}.summary-drivers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.summary-driver{padding-left:10px;border-left:3px solid var(--green)}.summary-driver strong,.summary-driver span{display:block}.summary-driver span{margin-top:3px;color:var(--muted);font-size:12px}
 .simulation-summary #summary-route-map{display:block;width:100%;height:220px;margin-top:18px;border:1px solid var(--line);background:#101713}
-.speed-map-key{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin-top:7px;color:var(--muted);font-size:11px}.speed-map-key i{width:140px;height:7px;background:linear-gradient(90deg,#b53b32,#176b4d)}.speed-map-key b{margin-left:8px;color:var(--ink);font-weight:650}
+.speed-map-key{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin-top:7px;color:var(--muted);font-size:11px}.speed-map-key i{width:140px;height:7px;background:linear-gradient(90deg,#ff0000,#65c99d)}.speed-map-key b{margin-left:8px;color:var(--ink);font-weight:650}
 @media(max-width:560px){.simulation-row>a{display:grid}.simulation-row>a>div:last-child{text-align:left}.simulation-title{align-items:flex-start;flex-direction:column}}
-@media(max-width:950px){.simulation-summary:not([hidden]){position:fixed;inset:12px;z-index:50;overflow:auto;max-height:calc(100vh - 24px);box-shadow:0 18px 50px rgba(0,0,0,.45)}}
+@media(max-width:950px){.simulation-summary:not([hidden]){position:fixed;inset:12px;z-index:50;overflow:auto;max-height:calc(100vh - 24px);box-shadow:0 18px 50px rgba(0,0,0,.45)}.summary-loadout{grid-template-columns:1fr}.summary-drivers{grid-template-columns:1fr}}
 @media print{
   @page{margin:14mm}
   html,body{background:#fff!important;color:#111!important}
