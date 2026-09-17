@@ -167,8 +167,8 @@ final class Simulator
 
     private function changeDriver(array &$state,string $driverId,string $id,DateTimeImmutable $at):void
     {
-        $current=$this->role($state,'driver');if($current&&$current['id']===$driverId)throw new RuntimeException('Choose a new driver.');$found=false;
-        foreach($state['drivers'] as &$driver){if($driver['id']===$driverId){if(($driver['locked_rest']??false)||$driver['fatigue']>=100)throw new RuntimeException('That driver must rest until fatigue reaches 50%.');$driver['role']='driver';$found=true;}elseif($driver['role']==='driver'||$driver['role']==='copilot')$driver['role']='rest';}unset($driver);
+        $current=$this->role($state,'driver');if($current&&$current['id']===$driverId)throw new RuntimeException('Choose a new driver.');$copilot=$this->role($state,'copilot');$copilotId=$copilot['id']??null;$found=false;
+        foreach($state['drivers'] as &$driver){if($driver['id']===$driverId){if(($driver['locked_rest']??false)||$driver['fatigue']>=100)throw new RuntimeException('That driver must rest until fatigue reaches 50%.');$driver['role']='driver';$found=true;}elseif($driver['id']===$copilotId)$driver['role']='copilot';elseif($driver['role']==='driver'||$driver['role']==='copilot')$driver['role']='rest';}unset($driver);
         if(!$found)throw new RuntimeException('Choose an available driver.');$state['driver_copilot']=false;$assigned=$this->role($state,'driver');$this->event($id,$at,'driver_changed',['driver'=>$assigned['name']??$driverId]);
     }
 
