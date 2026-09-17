@@ -86,13 +86,18 @@ delay. Tail winds improve fuel economy by
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
 Superadmins can configure the baseline percentage for weather, flat tires,
-headwinds, tailwinds, police, and road events. Regional and seasonal eligibility
+mechanical failures, headwinds, tailwinds, police, and road events. Regional and seasonal eligibility
 still determines which weather and wind effects can occur. When more than one
 effect succeeds at the same event opportunity, the seeded simulator selects one
 deterministically. These percentages are captured when a simulation is created,
 so later settings changes do not alter a saved game. Traffic is not governed by these percentages: past runs use
 recorded traffic evidence and future runs use supported predicted evidence.
-Every segment has an independent 1% base crash chance at any speed. This base
+Mechanical failures have an even chance of being repairable or terminal. A
+repairable failure brings the car to a controlled stop for a seeded
+10-to-30-minute roadside repair, then includes the time needed to return to
+speed. A terminal failure ends the run. Both outcomes are recorded in the event
+log and marked on the route map.
+Every segment has an independent configurable base crash chance, defaulting to 1%, at any speed. This base
 chance does not display a speed warning. A target speed over 120 mph activates the configurable high-speed crash check;
 speeds over 145 mph also activate a separate higher-speed crash check. Either
 crash immediately ends the run. Crossing each threshold presents its own

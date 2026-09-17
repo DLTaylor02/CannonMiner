@@ -8,8 +8,8 @@ INSERT INTO settings (key, value) VALUES
 ('automation_enabled', 'yes'), ('automation_interval_minutes', '60'),
 ('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
 ('telemetry_interval_minutes', '15'), ('dashboard_banner', ''),
-('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
-('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'),
+('simulator_crash_base_percent', '1'), ('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
+('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'), ('simulator_mechanical_failure_percent', '1'),
 ('simulator_headwind_percent', '1'), ('simulator_tailwind_percent', '1'),
 ('simulator_police_percent', '5'), ('simulator_road_event_percent', '5')
 ON CONFLICT (key) DO NOTHING;
