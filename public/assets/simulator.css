@@ -66,7 +66,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .control-note{color:var(--muted);font-size:12px}
 .simulation-crew #driver-cards{display:grid;gap:10px}
 .driver-card{padding:12px;border:1px solid var(--line);background:var(--paper)}
-.driver-card header{position:static;display:flex;justify-content:space-between;width:auto;min-height:0;padding:0;border:0;background:transparent}
+.driver-card header{position:static;display:flex;justify-content:space-between;width:auto;min-height:0;padding:0;border:0;background:transparent;color:var(--ink)}
 .driver-card header strong{padding-left:5px}
 .driver-card header span{padding-right:5px}
 .driver-card small{color:var(--muted)}
