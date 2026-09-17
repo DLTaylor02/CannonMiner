@@ -349,10 +349,11 @@ $app->post('/simulator/{id}/delete',function(Request $request,Response $response
     return$response->withHeader('Location','/simulator')->withStatus(302);
 })->add($guard);
 
-$app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $response)use($simulator,$render,$csrf,&$identity):Response{
-    if($request->getMethod()==='GET'&&(!isset($_SESSION['simulator_roster'])||isset($request->getQueryParams()['regenerate'])))$_SESSION['simulator_roster']=$simulator->roster($identity['username']);
+$app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $response)use($simulator,$settings,$render,$csrf,&$identity):Response{
+    $rosterNamesHash=hash('sha256',(string)$settings->get('simulator_driver_names',implode("\n",Simulator::DEFAULT_DRIVER_NAMES)));
+    if($request->getMethod()==='GET'&&(!isset($_SESSION['simulator_roster'])||($_SESSION['simulator_roster_names_hash']??'')!==$rosterNamesHash||isset($request->getQueryParams()['regenerate']))){$_SESSION['simulator_roster']=$simulator->roster($identity['username']);$_SESSION['simulator_roster_names_hash']=$rosterNamesHash;}
     $roster=(array)($_SESSION['simulator_roster']??$simulator->roster($identity['username']));$error=null;
-    if($request->getMethod()==='POST')try{$csrf($request);$id=$simulator->create((int)$identity['id'],(array)$request->getParsedBody(),$roster);unset($_SESSION['simulator_roster']);return$response->withHeader('Location','/simulator/'.$id)->withStatus(302);}catch(Throwable $exception){$error=$exception->getMessage();}
+    if($request->getMethod()==='POST')try{$csrf($request);$id=$simulator->create((int)$identity['id'],(array)$request->getParsedBody(),$roster);unset($_SESSION['simulator_roster'],$_SESSION['simulator_roster_names_hash']);return$response->withHeader('Location','/simulator/'.$id)->withStatus(302);}catch(Throwable $exception){$error=$exception->getMessage();}
     $defaultDeparture=(new DateTimeImmutable('tomorrow 06:00',new DateTimeZone('America/New_York')))->format('Y-m-d\TH:i');
     return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'cars'=>$simulator->cars(),'load_costs'=>$simulator->loadCosts(),'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
