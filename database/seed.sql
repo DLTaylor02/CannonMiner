@@ -20,11 +20,23 @@ INSERT INTO simulator_vehicles
 ('bmw-m5-competition','BMW M5 Competition',15,21,5.5,20.1,155,190,3),
 ('cadillac-ats','2016 Cadillac ATS',22,26,8.5,16,140,155,2),
 ('mercedes-cl55-amg','2004 Mercedes CL55 AMG',13,19,7.2,23.2,155,186,3),
-('ford-crown-victoria','2007 Ford Crown Victoria',15,23,121,19,140,140,3),
+('ford-crown-victoria','2007 Ford Crown Victoria',15,23,12,19,140,140,3),
 ('saab-9-5-aero','2008 Saab 9-5 Aero',17,26,11.7,18,155,160,1),
 ('toyota-celica-gts','2001 Toyota Celica GTS',20,29,17.5,14.5,115,140,2),
 ('lexus-sc400','1995 Lexus SC400',16,20,10,20.6,135,150,3)
 ON CONFLICT (id) DO NOTHING;
+
+WITH crown_victoria_mpg_fix AS (
+    INSERT INTO settings (key, value)
+    VALUES ('simulator_vehicle_defaults_version', '2')
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+)
+UPDATE simulator_vehicles
+SET mpg_above_70 = 12, updated_at = now()
+WHERE id = 'ford-crown-victoria'
+  AND mpg_above_70 = 121
+  AND EXISTS (SELECT 1 FROM crown_victoria_mpg_fix);
 
 WITH fuel_rate_upgrade AS (
     INSERT INTO settings (key, value)

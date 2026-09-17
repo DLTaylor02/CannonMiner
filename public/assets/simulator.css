@@ -6,6 +6,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 @media(max-width:850px){.mobile-menu nav .simulator-nav{margin:4px 0;text-align:center}}
 .simulator-head{align-items:center}
 .simulation-list{display:grid}
+.simulator-lobby-sections{display:grid;gap:22px}.simulation-failed-heading{margin-top:26px;padding:18px 4px 8px;border-top:1px solid var(--line)}.simulation-failed-heading h3{margin:0;font-size:18px}
 .simulation-row{display:flex;justify-content:space-between;gap:20px;padding:15px 4px;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none}
 .simulation-row:last-child{border-bottom:0}
 .simulation-row>div{display:grid;gap:3px}
@@ -13,7 +14,8 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .simulation-row span,.simulation-row time,.simulator-empty{color:var(--muted);font-size:12px}
 .simulation-finish-time{color:var(--green);font-size:19px;font-weight:850;font-variant-numeric:tabular-nums}
 .simulation-setup{display:grid;gap:20px}
-.car-choice{display:flex;align-items:end;gap:14px}.car-choice img{flex:0 0 48px;object-fit:contain}.car-choice label{flex:1}
+.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.vehicle-carousel{position:relative;display:grid;grid-template-columns:46px minmax(170px,260px) 46px;align-items:center;justify-content:center;gap:16px;min-height:190px}.vehicle-carousel-selection{display:grid;justify-items:center;gap:10px;min-width:0}.vehicle-carousel-viewport{display:grid;place-items:center;width:136px;height:136px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.vehicle-carousel-viewport img{width:96px;height:96px;object-fit:contain;image-rendering:auto}.vehicle-carousel-viewport span{font-size:54px}.vehicle-carousel-arrow{width:46px;height:46px;padding:0;border-radius:50%;font-size:24px;line-height:1}.vehicle-carousel-selection>strong{max-width:100%;font-family:Impact,"Arial Black",ui-sans-serif,system-ui,sans-serif;font-size:20px;font-style:italic;font-weight:800;line-height:1.15;text-align:center;text-transform:uppercase;letter-spacing:0}.vehicle-slide-out-left{animation:vehicle-out-left .15s ease-in forwards}.vehicle-slide-out-right{animation:vehicle-out-right .15s ease-in forwards}.vehicle-slide-in-left{animation:vehicle-in-left .19s ease-out}.vehicle-slide-in-right{animation:vehicle-in-right .19s ease-out}@keyframes vehicle-out-left{to{opacity:0;transform:translateX(-105%)}}@keyframes vehicle-out-right{to{opacity:0;transform:translateX(105%)}}@keyframes vehicle-in-left{from{opacity:0;transform:translateX(-105%)}}@keyframes vehicle-in-right{from{opacity:0;transform:translateX(105%)}}@media(prefers-reduced-motion:reduce){.vehicle-slide-out-left,.vehicle-slide-out-right,.vehicle-slide-in-left,.vehicle-slide-in-right{animation-duration:.01ms}}
+@media(max-width:400px){.vehicle-carousel{grid-template-columns:42px minmax(150px,1fr) 42px;gap:8px}.vehicle-carousel-arrow{width:42px;height:42px}.vehicle-carousel-selection>strong{font-size:18px}}
 .simulation-setup fieldset{margin:0;padding:18px;border:1px solid var(--line);background:var(--white)}
 .simulation-setup legend{padding:0 10px;font-size:20px;font-weight:750}
 .equipment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
