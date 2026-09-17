@@ -120,8 +120,12 @@ async function changeCar(direction) {
   const nextOption = carSelector.options[nextIndex];
   const nextImage = nextOption.dataset.image;
   await preloadImage(nextImage);
+  const outgoingOffset = direction > 0 ? '-105%' : '105%';
+  const incomingOffset = direction > 0 ? '105%' : '-105%';
   const incomingStage = document.createElement('div');
   incomingStage.className = 'vehicle-carousel-stage';
+  incomingStage.style.transform = `translateX(${incomingOffset})`;
+  incomingStage.style.opacity = '0';
   if (nextImage) {
     const image = document.createElement('img');
     image.src = nextImage;
@@ -139,8 +143,6 @@ async function changeCar(direction) {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const duration = reducedMotion ? 1 : 320;
-  const outgoingOffset = direction > 0 ? '-105%' : '105%';
-  const incomingOffset = direction > 0 ? '105%' : '-105%';
   const timing = {duration, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards'};
   const outgoingAnimation = carSelectorStage.animate([
     {transform: 'translateX(0)', opacity: 1},
