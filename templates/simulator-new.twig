@@ -3,7 +3,7 @@
 {% if error %}<p class="alert">{{ error }}</p>{% endif %}
 <form method="post" class="simulation-setup"><input type="hidden" name="_token" value="{{ csrf }}">
 <fieldset><legend>Run</legend><div class="settings-grid"><label>Departure date and time <span>New York time</span><input type="datetime-local" name="departure" value="{{ default_departure }}" required></label><label>Simulation speed<select name="mode"><option value="arcade">Arcade | 1 hour = 1 minute</option><option value="realtime">Realtime | 1 minute = 1 minute</option></select></label><label>Initial target speed <span>mph</span><input type="number" name="speed" min="20" max="250" step="1" value="110" required></label></div></fieldset>
-<fieldset><legend>Car</legend><div class="vehicle-carousel"><button id="car-previous" class="vehicle-carousel-arrow" type="button" aria-label="Previous vehicle" title="Previous vehicle">&larr;</button><div class="vehicle-carousel-selection" aria-live="polite"><div id="car-selector-viewport" class="vehicle-carousel-viewport"><img id="car-selector-image" width="96" height="96" alt="" hidden><span id="car-selector-placeholder" aria-hidden="true">&#x1f697;</span></div><strong id="car-selector-name"></strong></div><button id="car-next" class="vehicle-carousel-arrow" type="button" aria-label="Next vehicle" title="Next vehicle">&rarr;</button><label class="visually-hidden" for="car-selector">Selected vehicle</label><select name="car" id="car-selector" class="visually-hidden" required tabindex="-1" aria-hidden="true">{% for car in cars %}<option value="{{ car.id }}" data-top="{{ car.top_speed }}" data-tuned-top="{{ car.tuned_top_speed }}" data-max-fuel-cells="{{ car.max_fuel_cells }}" data-image="{{ car.image_path|default('') }}">{{ car.name }}</option>{% endfor %}</select></div></fieldset>
+<fieldset><legend>Car</legend><div class="vehicle-carousel"><button id="car-previous" class="vehicle-carousel-arrow" type="button" aria-label="Previous vehicle" title="Previous vehicle">&larr;</button><div class="vehicle-carousel-selection" aria-live="polite"><div class="vehicle-carousel-viewport"><div id="car-selector-stage" class="vehicle-carousel-stage"><img id="car-selector-image" width="96" height="96" alt="" hidden><span id="car-selector-placeholder" aria-hidden="true">&#x1f697;</span></div></div><strong id="car-selector-name"></strong></div><button id="car-next" class="vehicle-carousel-arrow" type="button" aria-label="Next vehicle" title="Next vehicle">&rarr;</button><label class="visually-hidden" for="car-selector">Selected vehicle</label><select name="car" id="car-selector" class="visually-hidden" required tabindex="-1" aria-hidden="true">{% for car in cars %}<option value="{{ car.id }}" data-top="{{ car.top_speed }}" data-tuned-top="{{ car.tuned_top_speed }}" data-max-fuel-cells="{{ car.max_fuel_cells }}" data-image="{{ car.image_path|default('') }}">{{ car.name }}</option>{% endfor %}</select></div></fieldset>
 <fieldset><legend>Car builder</legend><div class="equipment-grid">
 <div class="equipment-stepper"><div><strong>&#x26fd; Fuel cells</strong><span>+20 gal capacity each | $300 each</span></div><div><button type="button" id="fuel-cell-remove" aria-label="Remove fuel cell" title="Remove fuel cell">−</button><output id="fuel-cell-count">0</output><button type="button" id="fuel-cell-add" aria-label="Add fuel cell" title="Add fuel cell">+</button><input type="hidden" id="fuel-cell-input" name="fuel_cells" value="0"></div></div>
 <label class="equipment-option"><input type="checkbox" name="cruising_tune" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6e0;&#xfe0f; Cruising tune</strong><small>+5 MPG above 70 mph; unlock tuned top speed | $1,500</small></span></label>
@@ -24,7 +24,7 @@ const carSelector = document.getElementById('car-selector');
 const carSelectorImage = document.getElementById('car-selector-image');
 const carSelectorPlaceholder = document.getElementById('car-selector-placeholder');
 const carSelectorName = document.getElementById('car-selector-name');
-const carSelectorViewport = document.getElementById('car-selector-viewport');
+const carSelectorStage = document.getElementById('car-selector-stage');
 const fuelCellInput = document.getElementById('fuel-cell-input');
 const fuelCellCount = document.getElementById('fuel-cell-count');
 const tuneInput = document.querySelector('[name=cruising_tune]');
@@ -110,14 +110,14 @@ function changeCar(direction) {
   carAnimating = true;
   const outgoing = direction > 0 ? 'vehicle-slide-out-left' : 'vehicle-slide-out-right';
   const incoming = direction > 0 ? 'vehicle-slide-in-right' : 'vehicle-slide-in-left';
-  carSelectorViewport.classList.add(outgoing);
+  carSelectorStage.classList.add(outgoing);
   setTimeout(() => {
-    carSelectorViewport.classList.remove(outgoing);
+    carSelectorStage.classList.remove(outgoing);
     carSelector.selectedIndex = (carSelector.selectedIndex + direction + carSelector.options.length) % carSelector.options.length;
     syncEquipment();
     warnSpeed();
-    carSelectorViewport.classList.add(incoming);
-    setTimeout(() => { carSelectorViewport.classList.remove(incoming); carAnimating = false; }, 190);
+    carSelectorStage.classList.add(incoming);
+    setTimeout(() => { carSelectorStage.classList.remove(incoming); carAnimating = false; }, 190);
   }, 150);
 }
 document.getElementById('car-previous').addEventListener('click', () => changeCar(-1));
