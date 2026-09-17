@@ -141,9 +141,7 @@ async function changeCar(direction) {
   }
   carSelectorStage.parentElement.append(incomingStage);
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = reducedMotion ? 1 : 320;
-  const timing = {duration, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards'};
+  const timing = {duration: 320, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards'};
   const outgoingAnimation = carSelectorStage.animate([
     {transform: 'translateX(0)', opacity: 1},
     {transform: `translateX(${outgoingOffset})`, opacity: 0}
