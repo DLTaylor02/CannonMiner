@@ -105,20 +105,55 @@ rosterChecks.forEach(check => check.addEventListener('change', () => {
 speedInput.addEventListener('input', warnSpeed);
 carSelector.addEventListener('change', () => { warnSpeed(); syncEquipment(); });
 let carAnimating = false;
-function changeCar(direction) {
+const animationFinished = element => new Promise(resolve => {
+  element.addEventListener('animationend', resolve, {once: true});
+  setTimeout(resolve, 450);
+});
+const preloadImage = source => new Promise(resolve => {
+  if (!source) return resolve();
+  const image = new Image();
+  image.addEventListener('load', resolve, {once: true});
+  image.addEventListener('error', resolve, {once: true});
+  image.src = source;
+  if (image.complete) resolve();
+});
+async function changeCar(direction) {
   if (carAnimating || carSelector.options.length < 2) return;
   carAnimating = true;
+  const nextIndex = (carSelector.selectedIndex + direction + carSelector.options.length) % carSelector.options.length;
+  const nextOption = carSelector.options[nextIndex];
+  const nextImage = nextOption.dataset.image;
+  await preloadImage(nextImage);
   const outgoing = direction > 0 ? 'vehicle-slide-out-left' : 'vehicle-slide-out-right';
   const incoming = direction > 0 ? 'vehicle-slide-in-right' : 'vehicle-slide-in-left';
+  const incomingStage = document.createElement('div');
+  incomingStage.className = 'vehicle-carousel-stage';
+  if (nextImage) {
+    const image = document.createElement('img');
+    image.src = nextImage;
+    image.width = 128;
+    image.height = 128;
+    image.alt = nextOption.textContent;
+    incomingStage.append(image);
+  } else {
+    const placeholder = document.createElement('span');
+    placeholder.setAttribute('aria-hidden', 'true');
+    placeholder.textContent = '\u{1f697}';
+    incomingStage.append(placeholder);
+  }
+  carSelectorStage.parentElement.append(incomingStage);
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const outgoingFinished = animationFinished(carSelectorStage);
+  const incomingFinished = animationFinished(incomingStage);
   carSelectorStage.classList.add(outgoing);
-  setTimeout(() => {
-    carSelectorStage.classList.remove(outgoing);
-    carSelector.selectedIndex = (carSelector.selectedIndex + direction + carSelector.options.length) % carSelector.options.length;
-    syncEquipment();
-    warnSpeed();
-    carSelectorStage.classList.add(incoming);
-    setTimeout(() => { carSelectorStage.classList.remove(incoming); carAnimating = false; }, 190);
-  }, 150);
+  incomingStage.classList.add(incoming);
+  await Promise.all([outgoingFinished, incomingFinished]);
+  carSelector.selectedIndex = nextIndex;
+  syncEquipment();
+  warnSpeed();
+  carSelectorStage.classList.remove(outgoing);
+  incomingStage.remove();
+  carAnimating = false;
 }
 document.getElementById('car-previous').addEventListener('click', () => changeCar(-1));
 document.getElementById('car-next').addEventListener('click', () => changeCar(1));
