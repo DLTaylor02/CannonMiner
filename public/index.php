@@ -114,7 +114,7 @@ $app->post('/logout', function (Request $request, Response $response) use ($csrf
     $csrf($request); $_SESSION = []; session_destroy(); return $response->withHeader('Location', '/login')->withStatus(302);
 })->add($guard);
 $app->map(['GET','POST'],'/password',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,$passwordPolicy,&$identity):Response{
-    $error=$message=$warning=null;
+    $error=$message=$warning=null;$passwordChangeRequired=(bool)$identity['must_change_password'];
     if($request->getMethod()==='POST'){
         $csrf($request);$body=(array)$request->getParsedBody();$current=(string)($body['current_password']??'');$password=(string)($body['password']??'');
         $statement=$pdo->prepare('SELECT password_hash FROM users WHERE id=?');$statement->execute([$identity['id']]);$hash=(string)$statement->fetchColumn();
@@ -123,7 +123,7 @@ $app->map(['GET','POST'],'/password',function(Request $request,Response $respons
         else{
             $result=$identity['role']==='superadmin'?['valid'=>true,'errors'=>[],'warning'=>null]:$passwordPolicy->validate($password,$identity['username']);
             if(!$result['valid'])$error=implode(' ',$result['errors']);
-            else{$update=$pdo->prepare('UPDATE users SET password_hash=?,must_change_password=FALSE WHERE id=?');$update->execute([password_hash($password,PASSWORD_DEFAULT),$identity['id']]);$identity['must_change_password']=false;$message='Password changed.';$warning=$result['warning'];}
+            else{$update=$pdo->prepare('UPDATE users SET password_hash=?,must_change_password=FALSE WHERE id=?');$update->execute([password_hash($password,PASSWORD_DEFAULT),$identity['id']]);$identity['must_change_password']=false;$message='Password changed.';$warning=$result['warning'];if($passwordChangeRequired){$_SESSION['advisory']=$message.($warning?' '.$warning:'');$destination=$identity['role']==='gamer'?'/simulator':'/';return$response->withHeader('Location',$destination)->withStatus(302);}}
         }
     }
     return $render($request,$response,'password.twig',['error'=>$error,'message'=>$message,'warning'=>$warning,'csrf'=>$_SESSION['csrf'],'password_policy'=>['minimum_length'=>max(8,min(64,(int)$settings->get('password_min_length','12'))),'minimum_strength'=>$settings->get('password_min_strength','strong')]]);
@@ -711,46 +711,47 @@ $app->map(['GET','POST'], '/settings', function (Request $request, Response $res
     if(!isset($values['automation_interval_minutes']))$values['automation_interval_minutes']=(string)(max(1,min(168,(int)($values['automation_interval_hours']??1)))*60);
     $values['cruising_fuel_rate_gpm']??='10';
     $keyConfigured=($values['google_maps_api_key'] ?? '') !== ''; unset($values['google_maps_api_key']);
-    return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'message'=>$message,'csrf'=>$_SESSION['csrf']]);
+    $admin=in_array($identity['role'],['admin','superadmin'],true);$users=$admin?$pdo->query('SELECT id,username,role,theme,must_change_password,created_at FROM users ORDER BY username')->fetchAll():[];
+    return $render($request,$response,'settings.twig',['settings'=>$values,'google_key_configured'=>$keyConfigured,'segments'=>$pdo->query('SELECT * FROM segments ORDER BY name')->fetchAll(),'users'=>$users,'message'=>$message,'csrf'=>$_SESSION['csrf'],'password_policy'=>['minimum_length'=>max(8,min(64,(int)$settings->get('password_min_length','12'))),'minimum_strength'=>$settings->get('password_min_strength','strong')]]);
 })->add($guard);
 
-$app->map(['GET','POST'],'/users',function(Request $request,Response $response)use($pdo,$settings,$render,$csrf,$passwordPolicy,&$identity):Response{
+$app->map(['GET','POST'],'/users',function(Request $request,Response $response)use($pdo,$csrf,$passwordPolicy):Response{
+    if($request->getMethod()==='GET')return$response->withHeader('Location','/settings#user-administration')->withStatus(302);
     $message=$error=$warning=null;
-    if($request->getMethod()==='POST'){
-        $csrf($request);$body=(array)$request->getParsedBody();$role=(string)($body['role']??'user');
-        $allowed=['user','gamer','admin'];
-        $validation=$passwordPolicy->validate((string)($body['password']??''),trim((string)($body['username']??'')));
-        if(!in_array($role,$allowed,true))$error='That role cannot be assigned.';
-        elseif(!$validation['valid'])$error=implode(' ',$validation['errors']);
-        else try{$statement=$pdo->prepare('INSERT INTO users(username,password_hash,role) VALUES (?,?,?)');
-            $statement->execute([trim((string)$body['username']),password_hash((string)$body['password'],PASSWORD_DEFAULT),$role]);$message='User created.';$warning=$validation['warning'];
-        }catch(Throwable){$error='That username is unavailable.';}
-    }
-    return $render($request,$response,'users.twig',['users'=>$pdo->query('SELECT id,username,role,theme,must_change_password,created_at FROM users ORDER BY username')->fetchAll(),'message'=>$message,'error'=>$error,'warning'=>$warning,'csrf'=>$_SESSION['csrf'],'password_policy'=>['minimum_length'=>max(8,min(64,(int)$settings->get('password_min_length','12'))),'minimum_strength'=>$settings->get('password_min_strength','strong')]]);
+    $csrf($request);$body=(array)$request->getParsedBody();$role=(string)($body['role']??'user');
+    $allowed=['user','gamer','admin'];
+    $validation=$passwordPolicy->validate((string)($body['password']??''),trim((string)($body['username']??'')));
+    if(!in_array($role,$allowed,true))$error='That role cannot be assigned.';
+    elseif(!$validation['valid'])$error=implode(' ',$validation['errors']);
+    else try{$statement=$pdo->prepare('INSERT INTO users(username,password_hash,role) VALUES (?,?,?)');
+        $statement->execute([trim((string)$body['username']),password_hash((string)$body['password'],PASSWORD_DEFAULT),$role]);$message='User created.';$warning=$validation['warning'];
+    }catch(Throwable){$error='That username is unavailable.';}
+    if($error)$_SESSION['notice']=$error;else$_SESSION['advisory']=$message.($warning?' '.$warning:'');
+    return$response->withHeader('Location','/settings#user-administration')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->post('/users/{id}/delete',function(Request $request,Response $response,array $args)use($pdo,$csrf,&$identity):Response{
     $csrf($request);$statement=$pdo->prepare('SELECT role FROM users WHERE id=?');$statement->execute([(int)$args['id']]);$target=$statement->fetchColumn();
     if((int)$args['id']!== (int)$identity['id']&&$target!==false&&$target!=='superadmin'){
         $delete=$pdo->prepare('DELETE FROM users WHERE id=?');$delete->execute([(int)$args['id']]);
     }
-    return $response->withHeader('Location','/users')->withStatus(302);
+    return $response->withHeader('Location','/settings#user-administration')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->post('/users/{id}',function(Request $request,Response $response,array $args)use($pdo,$csrf,$passwordPolicy,&$identity):Response{
     $csrf($request);$id=(int)$args['id'];$lookup=$pdo->prepare('SELECT username,role FROM users WHERE id=?');$lookup->execute([$id]);$target=$lookup->fetch();
-    if(!$target||($target['role']==='superadmin'&&(int)$identity['id']!==$id))return $response->withHeader('Location','/users')->withStatus(302);
+    if(!$target||($target['role']==='superadmin'&&(int)$identity['id']!==$id))return $response->withHeader('Location','/settings#user-administration')->withStatus(302);
     $body=(array)$request->getParsedBody();$role=$target['role']==='superadmin'?'superadmin':(string)($body['role']??$target['role']);
     if(!in_array($role,['user','gamer','admin'],true)&&$target['role']!=='superadmin')$role=(string)$target['role'];
     $password=(string)($body['password']??'');
     if($password!==''){
         $validation=$target['role']==='superadmin'?['valid'=>true,'errors'=>[],'warning'=>null]:$passwordPolicy->validate($password,$target['username']);
-        if(!$validation['valid']){$_SESSION['notice']=implode(' ',$validation['errors']);return $response->withHeader('Location','/users')->withStatus(302);}
+        if(!$validation['valid']){$_SESSION['notice']=implode(' ',$validation['errors']);return $response->withHeader('Location','/settings#user-administration')->withStatus(302);}
         $update=$pdo->prepare('UPDATE users SET role=?,password_hash=?,must_change_password=FALSE WHERE id=?');$update->execute([$role,password_hash($password,PASSWORD_DEFAULT),$id]);
         if($validation['warning'])$_SESSION['advisory']=$validation['warning'];
     }else{$update=$pdo->prepare('UPDATE users SET role=? WHERE id=?');$update->execute([$role,$id]);}
-    return $response->withHeader('Location','/users')->withStatus(302);
+    return $response->withHeader('Location','/settings#user-administration')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->post('/users/{id}/must-change',function(Request $request,Response $response,array $args)use($pdo,$csrf):Response{
     $csrf($request);$statement=$pdo->prepare("UPDATE users SET must_change_password=TRUE WHERE id=? AND role<>'superadmin'");$statement->execute([(int)$args['id']]);
-    return $response->withHeader('Location','/users')->withStatus(302);
+    return $response->withHeader('Location','/settings#user-administration')->withStatus(302);
 })->add($requireAdmin)->add($guard);
 $app->run();

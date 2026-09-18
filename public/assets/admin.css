@@ -1,6 +1,7 @@
 .inline-user { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .inline-user :is(select,input) { min-width:120px; }
 .inline-user .password-meter,.inline-user .password-hints { flex-basis:100%; }
+.settings-group>.user-create-form { margin-bottom:18px; padding:0 0 18px; border:0; border-bottom:1px solid var(--line); background:transparent; }
 .table-wrap a { color:var(--green); font-weight:700; }
 @media(max-width:700px) { .inline-user { align-items:stretch; flex-direction:column; } }
 .game-vehicle-heading{margin-top:34px}.vehicle-editor-list{display:grid;gap:18px}.vehicle-editor-card{position:relative;padding:18px}.vehicle-editor-card form:first-child{display:grid;gap:16px}.vehicle-editor-card>form:last-child{position:absolute;top:18px;right:18px}.vehicle-editor-title{display:flex;align-items:center;gap:12px;padding-right:52px}.vehicle-editor-title h3{margin:0;font-size:18px}.vehicle-editor-title img,.vehicle-image-placeholder{width:48px;height:48px;object-fit:contain}.vehicle-image-placeholder{display:grid;place-items:center;border:1px solid var(--line);background:var(--paper);font-size:25px}.vehicle-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.vehicle-fields input[type=file]{padding:8px;height:auto;min-height:42px}
