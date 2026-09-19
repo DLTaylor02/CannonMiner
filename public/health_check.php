@@ -41,7 +41,7 @@ try {
             throw new RuntimeException('Vehicle image storage check failed');
         }
         $errorLog = (string) ini_get('error_log');
-        if (!str_starts_with($errorLog, '/var/log/cannonminer/') || !is_writable(dirname($errorLog))) {
+        if ($errorLog !== $root . '/var/log/php-error.log' || !is_writable(dirname($errorLog))) {
             throw new RuntimeException('Dedicated PHP logging configuration check failed');
         }
     }

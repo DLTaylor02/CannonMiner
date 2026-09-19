@@ -32,10 +32,14 @@ a `cannonminer-plan-worker.service` projection worker, and a
 normal account and can read only the public document
 tree and FPM socket. The `.env`, application source, session files, and runtime
 data are not readable by other applications running as `www-data`.
-Nginx, PHP-FPM, collector, automation, and worker output use dedicated files
-under `/var/log/cannonminer`. Setup installs a daily logrotate policy retaining
-14 rotations and compressing older files. PostgreSQL logging remains shared
-with the PostgreSQL service.
+Nginx writes CannonMiner access and error output to
+`/var/log/nginx/cannon-miner-access.log` and
+`/var/log/nginx/cannon-miner-error.log`. PHP-FPM, collector, automation, and
+worker output use dedicated files under `var/log` inside the application
+installation. Setup migrates the former `/var/log/cannonminer` files and
+installs a daily application-log rotation policy retaining 14 compressed
+rotations. The Nginx files follow the host's standard Nginx rotation policy.
+PostgreSQL logging remains shared with the PostgreSQL service.
 Upgrades restart the workers. Queued analysis and planning jobs are retained,
 while a calculation actively running during a restart is marked failed and can
 be run again. Simulator state is committed on each tick, so an active simulation

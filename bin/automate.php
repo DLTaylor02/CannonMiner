@@ -58,6 +58,10 @@ function directoryBytes(string $path):int{
     $bytes=0;$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path,FilesystemIterator::SKIP_DOTS));
     foreach($iterator as $file)if($file->isFile()&&!$file->isLink())$bytes+=$file->getSize();return$bytes;
 }
+function matchingFilesBytes(string $pattern):int{
+    $bytes=0;
+    foreach(glob($pattern)?:[] as $file)if(is_file($file)&&!is_link($file))$bytes+=(int)filesize($file);return$bytes;
+}
 function recordCpuMetric(PDO $pdo):void{
     $uid=cannonMinerUid();$before=cpuSnapshot();$appBefore=userCpuSnapshot($uid);usleep(250000);$appAfter=userCpuSnapshot($uid);$after=cpuSnapshot();
     $total=max(1,$after['total']-$before['total']);$idle=$after['idle']-$before['idle'];
@@ -69,7 +73,8 @@ function recordCpuMetric(PDO $pdo):void{
 function recordStorageMetric(PDO $pdo,string $root):void{
     $totalDisk=(int)disk_total_space($root);$freeDisk=(int)disk_free_space($root);
     $databaseBytes=(int)$pdo->query('SELECT pg_database_size(current_database())')->fetchColumn();
-    $appBytes=$databaseBytes+directoryBytes($root)+directoryBytes('/var/log/cannonminer')+directoryBytes('/var/lib/cannonminer/sessions');
+    $nginxLogBytes=matchingFilesBytes('/var/log/nginx/cannon-miner-*.log*');
+    $appBytes=$databaseBytes+directoryBytes($root)+$nginxLogBytes+directoryBytes('/var/lib/cannonminer/sessions');
     $save=$pdo->prepare('INSERT INTO storage_metrics(disk_total_bytes,disk_free_bytes,app_bytes) VALUES (?,?,?)');
     $save->execute([$totalDisk,$freeDisk,$appBytes]);
     $pdo->exec("DELETE FROM storage_metrics WHERE recorded_at < now() - interval '90 days'");

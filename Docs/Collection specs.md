@@ -4,7 +4,8 @@ Setup creates `/etc/cron.d/cannonminer`. Cron checks once per minute, while the
 actual collection interval is read from PostgreSQL and can be changed under
 WebUI Settings from 5 minutes to 7 days. PostgreSQL locking prevents overlapping
 runs. Results and failures are recorded in `collection_runs`; successful
-collections and failures are written to `/var/log/cannonminer/collector.log`.
+collections and failures are written to `var/log/collector.log` inside the
+application installation (normally `/var/www/cannonminer/var/log/collector.log`).
 Routine scheduled checks that find a collection is not due, or already running,
 do not write a log entry. During upgrades, setup removes active and
 commented legacy Python collector entries from the installing user's crontab.

@@ -178,27 +178,29 @@ systemctl list-unit-files "$PHP_FPM_SERVICE" --no-legend 2>/dev/null | grep -q "
 $SUDO systemctl enable --now "$PHP_FPM_SERVICE"
 SESSION_DIR="/var/lib/cannonminer/sessions"
 FPM_SOCKET="/run/php/cannonminer.sock"
-LOG_DIR="/var/log/cannonminer"
+APP_LOG_DIR="$ROOT_DIR/var/log"
+NGINX_LOG_DIR="/var/log/nginx"
+NGINX_ACCESS_LOG="$NGINX_LOG_DIR/cannon-miner-access.log"
+NGINX_ERROR_LOG="$NGINX_LOG_DIR/cannon-miner-error.log"
+LEGACY_LOG_DIR="/var/log/cannonminer"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0700 "$SESSION_DIR"
-$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$LOG_DIR"
-for LOG_FILE in php-error.log nginx-access.log nginx-error.log collector.log automation.log worker.log planner-worker.log simulator-worker.log; do
-  $SUDO touch "$LOG_DIR/$LOG_FILE"
-  $SUDO chown "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$LOG_DIR/$LOG_FILE"
-  $SUDO chmod 0640 "$LOG_DIR/$LOG_FILE"
+$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$APP_LOG_DIR"
+for LOG_FILE in php-error.log collector.log automation.log worker.log planner-worker.log simulator-worker.log; do
+  $SUDO touch "$APP_LOG_DIR/$LOG_FILE"
+  $SUDO chown "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$APP_LOG_DIR/$LOG_FILE"
+  $SUDO chmod 0640 "$APP_LOG_DIR/$LOG_FILE"
 done
-for LOG_NAME in collector automation; do
-  LEGACY_LOG="$ROOT_DIR/var/$LOG_NAME.log"
-  if [ -f "$LEGACY_LOG" ]; then
-    if [ -s "$LEGACY_LOG" ]; then
-      printf '[%s] Migrated records from %s\n' "$(date --iso-8601=seconds)" "$LEGACY_LOG" >> "$LOG_DIR/$LOG_NAME.log"
-      $SUDO cat "$LEGACY_LOG" >> "$LOG_DIR/$LOG_NAME.log"
-    fi
-    $SUDO rm -f "$LEGACY_LOG"
-  fi
+if [ ! -d "$NGINX_LOG_DIR" ]; then
+  $SUDO install -d -o root -g adm -m 0755 "$NGINX_LOG_DIR"
+fi
+for NGINX_LOG in "$NGINX_ACCESS_LOG" "$NGINX_ERROR_LOG"; do
+  $SUDO touch "$NGINX_LOG"
+  $SUDO chown root:adm "$NGINX_LOG"
+  $SUDO chmod 0640 "$NGINX_LOG"
 done
 LOGROTATE_TMP="$(mktemp)"
 cat > "$LOGROTATE_TMP" <<LOGROTATE
-$LOG_DIR/*.log {
+$APP_LOG_DIR/*.log {
     daily
     rotate 14
     compress
@@ -236,7 +238,7 @@ php_admin_value[max_input_time] = 0
 php_admin_value[session.save_path] = $SESSION_DIR
 php_admin_value[session.use_strict_mode] = 1
 php_admin_value[session.cookie_httponly] = 1
-php_admin_value[error_log] = /var/log/cannonminer/php-error.log
+php_admin_value[error_log] = $APP_LOG_DIR/php-error.log
 php_admin_flag[log_errors] = on
 FPM
 $SUDO install -m 0644 "$FPM_POOL_TMP" "/etc/php/$PHP_SHORT_VERSION/fpm/pool.d/cannonminer.conf"
@@ -296,6 +298,10 @@ $SUDO find "$ROOT_DIR/public" -type d -exec chmod 0755 {} +
 $SUDO find "$ROOT_DIR/public" -type f -exec chmod 0644 {} +
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0755 "$ROOT_DIR/public/uploads/vehicles"
 $SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$ROOT_DIR/var"
+$SUDO install -d -o "$APP_SYSTEM_USER" -g "$APP_SYSTEM_USER" -m 0750 "$APP_LOG_DIR"
+$SUDO chown -R "$APP_SYSTEM_USER":"$APP_SYSTEM_USER" "$APP_LOG_DIR"
+$SUDO find "$APP_LOG_DIR" -type f -exec chmod 0640 {} +
+as_user "$APP_SYSTEM_USER" test -w "$APP_LOG_DIR/php-error.log" || fail "The CannonMiner PHP-FPM user cannot write $APP_LOG_DIR/php-error.log."
 $SUDO "$PHP_FPM_BIN" -t
 $SUDO systemctl reload "$PHP_FPM_SERVICE"
 
@@ -359,8 +365,8 @@ WorkingDirectory=$ROOT_DIR
 ExecStart=$(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 "$ROOT_DIR/bin/analyze-worker.php"
 Restart=always
 RestartSec=3
-StandardOutput=append:$LOG_DIR/worker.log
-StandardError=append:$LOG_DIR/worker.log
+StandardOutput=append:$APP_LOG_DIR/worker.log
+StandardError=append:$APP_LOG_DIR/worker.log
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
@@ -393,8 +399,8 @@ WorkingDirectory=$ROOT_DIR
 ExecStart=$(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 "$ROOT_DIR/bin/plan-worker.php"
 Restart=always
 RestartSec=3
-StandardOutput=append:$LOG_DIR/planner-worker.log
-StandardError=append:$LOG_DIR/planner-worker.log
+StandardOutput=append:$APP_LOG_DIR/planner-worker.log
+StandardError=append:$APP_LOG_DIR/planner-worker.log
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
@@ -427,8 +433,8 @@ WorkingDirectory=$ROOT_DIR
 ExecStart=$(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 "$ROOT_DIR/bin/simulator-worker.php"
 Restart=always
 RestartSec=3
-StandardOutput=append:$LOG_DIR/simulator-worker.log
-StandardError=append:$LOG_DIR/simulator-worker.log
+StandardOutput=append:$APP_LOG_DIR/simulator-worker.log
+StandardError=append:$APP_LOG_DIR/simulator-worker.log
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
@@ -462,10 +468,53 @@ if as_user "$INSTALL_USER" crontab -l > "$LEGACY_CRON_TMP" 2>/dev/null; then
   fi
 fi
 {
-  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$LOG_DIR/collector.log' 2>&1"
-  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/automate.php --scheduled >> '$LOG_DIR/automation.log' 2>&1"
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/collect.php --scheduled >> '$APP_LOG_DIR/collector.log' 2>&1"
+  printf '%s\n' "* * * * * $APP_SYSTEM_USER cd '$ROOT_DIR' && $(command -v php) -d memory_limit=$PHP_MEMORY_LIMIT -d max_execution_time=0 -d max_input_time=0 bin/automate.php --scheduled >> '$APP_LOG_DIR/automation.log' 2>&1"
 } > "$CRON_TMP"
 $SUDO install -m 0644 "$CRON_TMP" /etc/cron.d/cannonminer
+
+info "Migrating legacy CannonMiner logs"
+for LOG_NAME in php-error collector automation worker planner-worker simulator-worker; do
+  LEGACY_LOG="$LEGACY_LOG_DIR/$LOG_NAME.log"
+  if [ -s "$LEGACY_LOG" ]; then
+    printf '[%s] Migrated records from %s\n' "$(date --iso-8601=seconds)" "$LEGACY_LOG" >> "$APP_LOG_DIR/$LOG_NAME.log"
+    $SUDO cat "$LEGACY_LOG" >> "$APP_LOG_DIR/$LOG_NAME.log"
+  fi
+  $SUDO rm -f "$LEGACY_LOG"
+done
+for LOG_PAIR in "nginx-access.log:$NGINX_ACCESS_LOG" "nginx-error.log:$NGINX_ERROR_LOG"; do
+  LEGACY_NAME="${LOG_PAIR%%:*}"
+  NEW_LOG="${LOG_PAIR#*:}"
+  LEGACY_LOG="$LEGACY_LOG_DIR/$LEGACY_NAME"
+  if [ -s "$LEGACY_LOG" ]; then
+    printf '[%s] Migrated records from %s\n' "$(date --iso-8601=seconds)" "$LEGACY_LOG" >> "$NEW_LOG"
+    $SUDO cat "$LEGACY_LOG" >> "$NEW_LOG"
+  fi
+  $SUDO rm -f "$LEGACY_LOG"
+done
+for LOG_NAME in collector automation; do
+  LEGACY_LOG="$ROOT_DIR/var/$LOG_NAME.log"
+  if [ -s "$LEGACY_LOG" ]; then
+    printf '[%s] Migrated records from %s\n' "$(date --iso-8601=seconds)" "$LEGACY_LOG" >> "$APP_LOG_DIR/$LOG_NAME.log"
+    $SUDO cat "$LEGACY_LOG" >> "$APP_LOG_DIR/$LOG_NAME.log"
+  fi
+  $SUDO rm -f "$LEGACY_LOG"
+done
+if [ -d "$LEGACY_LOG_DIR" ]; then
+  MIGRATION_STAMP="$(date +%s)"
+  while IFS= read -r -d '' LEGACY_ARCHIVE; do
+    ARCHIVE_NAME="$(basename "$LEGACY_ARCHIVE")"
+    case "$ARCHIVE_NAME" in
+      nginx-access.log.*|nginx-error.log.*)
+        $SUDO mv "$LEGACY_ARCHIVE" "$NGINX_LOG_DIR/cannon-miner-legacy-$MIGRATION_STAMP-$ARCHIVE_NAME"
+        ;;
+      *)
+        $SUDO mv "$LEGACY_ARCHIVE" "$APP_LOG_DIR/legacy-$MIGRATION_STAMP-$ARCHIVE_NAME"
+        ;;
+    esac
+  done < <(find "$LEGACY_LOG_DIR" -maxdepth 1 -type f -name '*.log.*' -print0)
+fi
+$SUDO rmdir "$LEGACY_LOG_DIR" 2>/dev/null || true
 
 info "Running final checks"
 as_user "$INSTALL_USER" composer check-platform-reqs --no-dev

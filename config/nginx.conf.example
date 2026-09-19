@@ -21,8 +21,8 @@ server {
     if ($request_uri = "/health_check.php") {
         set $cannonminer_loggable 0;
     }
-    access_log /var/log/cannonminer/nginx-access.log combined if=$cannonminer_loggable;
-    error_log /var/log/cannonminer/nginx-error.log warn;
+    access_log /var/log/nginx/cannon-miner-access.log combined if=$cannonminer_loggable;
+    error_log /var/log/nginx/cannon-miner-error.log warn;
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;

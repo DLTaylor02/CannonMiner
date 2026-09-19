@@ -1,7 +1,8 @@
 `GET /health_check.php` is the silent monitoring endpoint. A healthy application
 returns an empty `200` response. Runtime, filesystem, session, logging, database,
 schema, or superadmin-invariant failures return an empty `503` response; the
-reason is written to `/var/log/cannonminer/php-error.log`.
+reason is written to `var/log/php-error.log` inside the application installation
+(normally `/var/www/cannonminer/var/log/php-error.log`).
 
 Run the installed-system test suite after setup or an upgrade:
 
@@ -38,14 +39,14 @@ systemctl status cannonminer-worker.service
 systemctl status cannonminer-plan-worker.service
 systemctl status cannonminer-simulator-worker.service
 systemctl status php$(php -r 'echo PHP_MAJOR_VERSION,".",PHP_MINOR_VERSION;')-fpm.service
-sudo tail -n 100 /var/log/cannonminer/worker.log
-sudo tail -n 100 /var/log/cannonminer/planner-worker.log
-sudo tail -n 100 /var/log/cannonminer/simulator-worker.log
+sudo tail -n 100 /var/www/cannonminer/var/log/worker.log
+sudo tail -n 100 /var/www/cannonminer/var/log/planner-worker.log
+sudo tail -n 100 /var/www/cannonminer/var/log/simulator-worker.log
 ```
 
-All application-specific logs are stored under `/var/log/cannonminer`:
+Application and worker logs are stored under `var/log` inside the installation
+(normally `/var/www/cannonminer/var/log`):
 
-- `nginx-access.log` and `nginx-error.log`: CannonMiner's Nginx virtual host
 - `php-error.log`: CannonMiner's dedicated PHP-FPM pool
 - `collector.log`: successful collections and collection failures
 - `automation.log`: queued automation batches and automation failures
@@ -53,11 +54,18 @@ All application-specific logs are stored under `/var/log/cannonminer`:
 - `planner-worker.log`: future-projection worker failures
 - `simulator-worker.log`: simulation tick failures
 
+Nginx keeps its CannonMiner-specific files in the conventional Nginx log
+directory:
+
+- `/var/log/nginx/cannon-miner-access.log`
+- `/var/log/nginx/cannon-miner-error.log`
+
 Routine scheduled checks that have no work to perform are silent, and the
-one-second analysis progress poll is omitted from Nginx access logging. Logs
-rotate daily, retain 14 rotations, and compress older rotations. PostgreSQL
-remains a shared service and retains its system-level logging rather than
-duplicating it under CannonMiner. Run
+one-second analysis progress poll is omitted from Nginx access logging.
+Application logs rotate daily, retain 14 rotations, and compress older
+rotations. Nginx logs follow the host's standard Nginx rotation policy.
+PostgreSQL remains a shared service and retains its system-level logging rather
+than duplicating it under CannonMiner. Run
 `composer automate` to enqueue an automation batch and record a CPU telemetry
 sample immediately. Scheduled CPU telemetry is collected every 15 minutes by
 default and has its own superadmin setting, independent of the route automation
@@ -72,9 +80,10 @@ host line attributable to CannonMiner rather than a per-core process average.
 Telemetry recorded by the older per-process method is retained in PostgreSQL
 but excluded from the graph because its units are not directly comparable.
 
-Dashboard CannonMiner storage includes the deployed application tree, every
-file and rotated archive under `/var/log/cannonminer`, the dedicated session
-directory, and the complete PostgreSQL database size reported by
+Dashboard CannonMiner storage includes the deployed application tree (including
+application and worker logs), every CannonMiner Nginx log and rotated archive
+matching `/var/log/nginx/cannon-miner-*.log*`, the dedicated session directory,
+and the complete PostgreSQL database size reported by
 `pg_database_size`. Shared operating-system and PostgreSQL service logs remain
 part of "Other system" usage. Storage is sampled every four hours, six times per
 day, independently of the configurable CPU telemetry interval.
