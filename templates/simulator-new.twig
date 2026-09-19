@@ -8,6 +8,7 @@
 <fieldset><legend>Car builder</legend><div class="equipment-grid">
 <div class="equipment-stepper"><div><strong>&#x26fd; Fuel cells</strong><span>+20 gal capacity each | $300 each</span></div><div><button type="button" id="fuel-cell-remove" aria-label="Remove fuel cell" title="Remove fuel cell">−</button><output id="fuel-cell-count">0</output><button type="button" id="fuel-cell-add" aria-label="Add fuel cell" title="Add fuel cell">+</button><input type="hidden" id="fuel-cell-input" name="fuel_cells" value="0"></div></div>
 <label class="equipment-option"><input type="checkbox" name="cruising_tune" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6e0;&#xfe0f; Cruising tune</strong><small>+5 MPG above 70 mph; unlock tuned top speed | $1,500</small></span></label>
+<label class="equipment-option"><input type="checkbox" name="tuned_up" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f527; Tuned up</strong><small>Reduces the vehicle's Lemon rating to 1% | $2,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="cruising_tires" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6de; Cruising tires</strong><small>+1 MPG; −50% flat-tire chance | $1,500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="additional_spare" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f9f0; Additional Spare</strong><small>Allows one additional recoverable flat tire | $500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="radio_scanner" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f4fb; Radio Scanner</strong><small>Early warning response | $250</small></span></label>
@@ -29,6 +30,7 @@ const carSelectorStage = document.getElementById('car-selector-stage');
 const fuelCellInput = document.getElementById('fuel-cell-input');
 const fuelCellCount = document.getElementById('fuel-cell-count');
 const tuneInput = document.querySelector('[name=cruising_tune]');
+const tunedUpInput = document.querySelector('[name=tuned_up]');
 const tiresInput = document.querySelector('[name=cruising_tires]');
 const additionalSpareInput = document.querySelector('[name=additional_spare]');
 const radioInput = document.querySelector('[name=radio_scanner]');
@@ -53,6 +55,7 @@ function syncLoad() {
     + (additionalSpareInput.checked ? Number(loadCosts.additional_spare) : 0)
     + (tiresInput.checked ? Number(loadCosts.cruising_tires) : 0)
     + (tuneInput.checked ? Number(loadCosts.cruising_tune) : 0)
+    + (tunedUpInput.checked ? Number(loadCosts.tuned_up) : 0)
     + (radioInput.checked ? Number(loadCosts.radio_scanner) : 0)
     + (radarInput.checked ? Number(loadCosts.radar_scanner) : 0)
     + (jammerInput.checked ? Number(loadCosts.radar_jammer) : 0);
@@ -113,6 +116,7 @@ function syncEquipment() {
   const modifiers = [];
   if (cells) modifiers.push(`+${cells * 20} gal fuel capacity`);
   if (tuneInput.checked) modifiers.push('+5 MPG above 70 mph; tuned top speed unlocked');
+  if (tunedUpInput.checked) modifiers.push('Lemon rating reduced to 1%');
   if (tiresInput.checked) modifiers.push('+1 MPG; flat-tire chance reduced 50%');
   if (additionalSpareInput.checked) modifiers.push('+1 recoverable flat tire');
   if (radioInput.checked) modifiers.push('Radio Scanner police response');
@@ -121,7 +125,7 @@ function syncEquipment() {
   document.getElementById('equipment-modifiers').innerHTML = (modifiers.length ? modifiers : ['No equipment modifiers'])
     .map(item => `<li>${item}</li>`).join('');
 
-  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tiresInput.checked ? 1500 : 0) + (additionalSpareInput.checked ? 500 : 0)
+  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tunedUpInput.checked ? 2000 : 0) + (tiresInput.checked ? 1500 : 0) + (additionalSpareInput.checked ? 500 : 0)
     + (radioInput.checked ? 250 : 0) + (radarInput.checked ? 600 : 0) + (jammerInput.checked ? 1000 : 0);
   document.getElementById('equipment-cost').textContent = new Intl.NumberFormat(undefined, {
     style: 'currency', currency: 'USD', maximumFractionDigits: 0
@@ -204,7 +208,7 @@ document.getElementById('fuel-cell-add').addEventListener('click', () => {
   syncEquipment();
 });
 tuneInput.addEventListener('change', () => { syncEquipment(); warnSpeed(); });
-[tiresInput, additionalSpareInput, radioInput, radarInput, jammerInput].forEach(control => control.addEventListener('change', syncEquipment));
+[tunedUpInput, tiresInput, additionalSpareInput, radioInput, radarInput, jammerInput].forEach(control => control.addEventListener('change', syncEquipment));
 Object.values(speedWarnings).forEach(dialog => dialog.querySelector('button').addEventListener('click', () => {
   dialog.close();
   showNextSpeedWarning();

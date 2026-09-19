@@ -9,15 +9,17 @@ INSERT INTO settings (key, value) VALUES
 ('automation_speed_mph', '110'), ('automation_profile', 'balanced'), ('automation_max_risk', '0.20'),
 ('telemetry_interval_minutes', '15'), ('dashboard_banner', ''),
 ('simulator_crash_base_percent', '1'), ('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
-('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'), ('simulator_mechanical_failure_percent', '1'),
+('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'),
 ('simulator_headwind_percent', '1'), ('simulator_tailwind_percent', '1'),
 ('simulator_police_percent', '5'), ('simulator_road_event_percent', '5'),
 ('simulator_load_driver', '200'), ('simulator_load_fuel_cell', '200'),
 ('simulator_load_additional_spare', '200'), ('simulator_load_cruising_tires', '0'),
-('simulator_load_cruising_tune', '50'), ('simulator_load_radio_scanner', '1'),
+('simulator_load_cruising_tune', '50'), ('simulator_load_tuned_up', '0'), ('simulator_load_radio_scanner', '1'),
 ('simulator_load_radar_scanner', '5'), ('simulator_load_radar_jammer', '25'),
 ('simulator_driver_names', E'Doug Tabbut\nDunadel Daryoush\nArne Toman\nChris Duerden\nSafi Barqawi\nChris Benvie\nJames Allen\nKale Odhner\nSamuel Lurie\nChris Allen\nMatt Fried\nChristopher Stowell\nBerkeley Chadwick\nCarl Dietz\nJason Adkins\nMark Spence\nSean Petr\nDave Black\nDan Huang\nEd Bolian\nStephen Thomas\nTommy Thomas\nSteven Groh\nTroy Schneider\nAndrew Calore\nRyan Stark\nDavid Risch\nNik Krueger\nWesley Vigh\nChristopher Michael\nTommy Davies\nRob Pickup\nRobert Pryer\nRomuald Clariond\nSeth Rose\nCameron Davis\nAaron Tulin\nAlex Roy\nDave Maher\nCory Welles\nJohn Levie\nJoe Petralia\nYumi Dietz\nBen Preston\nElijah Dietz\nTaylor Hull\nHunter Robinson\nAndrew Rodgers\nScott Saier\nTim Daley\nWilliam Shafer\nMiles Compton\nSyed Ahmed\nTravis Hilton\nArt Ashmore\nFred Ashmore\nChris Taylor\nAdam Swetlik\nRichard Rawlings\nDennis Collins')
 ON CONFLICT (key) DO NOTHING;
+
+DELETE FROM settings WHERE key = 'simulator_mechanical_failure_percent';
 
 INSERT INTO simulator_vehicles
 (id,name,mpg_below_35,mpg_35_70,mpg_above_70,capacity,top_speed,tuned_top_speed,max_fuel_cells,max_load) VALUES

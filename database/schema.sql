@@ -38,11 +38,13 @@ CREATE TABLE IF NOT EXISTS simulator_vehicles (
     tuned_top_speed NUMERIC(8,2) NOT NULL CHECK (tuned_top_speed > 0),
     max_fuel_cells INTEGER NOT NULL CHECK (max_fuel_cells BETWEEN 0 AND 20),
     max_load INTEGER NOT NULL DEFAULT 1000 CHECK (max_load > 0),
+    lemon NUMERIC(5,2) NOT NULL DEFAULT 1 CHECK (lemon BETWEEN 0 AND 100),
     image_path TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE simulator_vehicles ADD COLUMN IF NOT EXISTS max_load INTEGER NOT NULL DEFAULT 1000 CHECK (max_load > 0);
+ALTER TABLE simulator_vehicles ADD COLUMN IF NOT EXISTS lemon NUMERIC(5,2) NOT NULL DEFAULT 1 CHECK (lemon BETWEEN 0 AND 100);
 
 CREATE TABLE IF NOT EXISTS login_attempts (
     id BIGSERIAL PRIMARY KEY,

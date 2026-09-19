@@ -10,11 +10,12 @@ advances one simulated hour per real minute.
 
 Simulation setup uses a superadmin-managed car catalog rather than free-form
 vehicle values. Each car stores three speed-dependent MPG ratings, fuel
-capacity, stock and tuned top speeds, a maximum fuel-cell count, and an optional
+capacity, stock and tuned top speeds, a maximum fuel-cell count, a Lemon rating,
+and an optional
 128 by 128 transparent PNG image. Users may request a target above the selected car's current top speed,
 but actual speed is capped and the live map shows a vehicle-limit status icon.
 Traffic and weather caps take priority when they impose a lower limit. Cars use
-their stock top speed until a future equipped item enables the tuned top speed.
+their stock top speed until the cruising tune enables the tuned top speed.
 
 The setup car builder supports up to the selected car's maximum fuel-cell count.
 Each $300 cell adds 20 gallons of capacity. A $1,500 cruising tune adds 5 MPG
@@ -27,6 +28,8 @@ an encounter before the Radio Scanner. A Radar Jammer cannot be installed
 without a Radar Scanner. The live instrument panel represents installed
 equipment with symbols whose tooltips describe each modifier. The
 builder displays equipment modifiers and total cost without revealing base MPG.
+The $2,000 Tuned up equipment reduces the selected vehicle's effective Lemon
+rating to 1% for that simulation.
 Each vehicle also has a superadmin-managed maximum load. Drivers and installed
 equipment consume configurable load values. Simulation setup displays remaining
 load as a percentage, and an overloaded car cannot begin a
@@ -69,7 +72,9 @@ approaches 150; totals of 150 or higher receive the full 10 GPM rate. Vehicle
 deceleration and acceleration continue to occur at 5 mph per second.
 
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
-for the affected segment. Weather is independent of crew skill and applies a
+for the affected segment. While traffic is active, that cap is multiplied by
+the current driver's effective driving-skill percentage, including fatigue
+degradation. Weather is independent of crew skill and applies a
 speed cap: fog 45 mph, rain 80 mph, ice 35 mph, or snow 65 mph. Each weather
 event lasts for an undisclosed, internally bounded travel distance and carries
 into the next route segment when necessary. The simulator pauses with a notice
@@ -88,13 +93,14 @@ chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Each segment has three independently rolled event windows,
 spread across 15% to 90% of the segment, so more than one random event can occur
 during the same segment. Recorded traffic also begins at a deterministic
-interior point, and its cap lasts only long enough to reproduce the observed
-delay. Tail winds improve fuel economy by
+interior point. Its evidence-derived base cap duration reproduces the observed
+delay before the active driver's skill coefficient is applied. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
 Superadmins can configure the baseline percentage for weather, flat tires,
-mechanical failures, headwinds, tailwinds, police, and road events. Regional and seasonal eligibility
+headwinds, tailwinds, police, and road events. Mechanical-failure probability
+comes from the selected vehicle's superadmin-managed Lemon rating. Regional and seasonal eligibility
 still determines which weather and wind effects can occur. When more than one
 effect succeeds at the same event opportunity, the seeded simulator selects one
 deterministically. These percentages are captured when a simulation is created,
