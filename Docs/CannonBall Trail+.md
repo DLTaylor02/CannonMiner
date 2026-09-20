@@ -73,8 +73,9 @@ stops, driver changes, police encounters, flat tires, road obstacles, and each
 weather condition are retained as distinct symbols on both maps.
 
 Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
-and scales linearly toward 16 GPM as the crew's combined co-piloting skill
-approaches 150; totals of 150 or higher receive the full 16 GPM rate. Vehicle
+when the crew's average effective co-piloting skill is 50 or lower. It scales
+linearly from 5 GPM at an average of 50 to 16 GPM at the maximum average of
+100. Vehicle
 deceleration and acceleration continue to occur at 5 mph per second.
 
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
@@ -104,8 +105,9 @@ delay before the active driver's skill coefficient is applied. Drivers below
 75 effective driving skill can also misread traffic and become stuck behind a
 random slow vehicle for 5 to 10 whole miles. The chance scales linearly from
 100% at zero skill to 0% at 75 skill at each event opportunity. These events
-have distinct map and history entries and do not claim to come from traffic
-evidence. Tail winds improve fuel economy by
+have distinct map and history entries, remain active across driver changes,
+and end only after the assigned distance has been traveled. They do not claim
+to come from traffic evidence. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
