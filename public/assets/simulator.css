@@ -142,7 +142,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
   html,body{background:#fff!important;color:#111!important}
   body.simulation-page{display:block;min-height:0;overflow:visible}
   .simulation-page>header,.simulation-page>footer,.simulation-page .simulator-head,.simulation-page #simulation-error,.simulation-page .simulator-map-panel,.simulation-page .simulator-instruments,.simulation-page .simulation-controls,.simulation-page .simulation-crew,.simulation-page dialog,.simulation-page .summary-return{display:none!important}
-  .simulation-page main{display:block;width:auto;max-width:none;height:auto;margin:0;padding:0;overflow:visible}
+  .simulation-page main{box-sizing:border-box;display:block;width:auto;max-width:none;height:auto;margin:0;padding:6mm;overflow:visible}
   .simulation-page .simulation-grid{display:block;height:auto}
   .simulation-page .simulation-summary:not([hidden]){position:static;display:block;inset:auto;max-height:none;margin:0;padding:0;border:0;background:#fff!important;color:#111!important;overflow:visible;box-shadow:none}
   .simulation-page .simulation-summary .section-heading{margin-bottom:14px;border-color:#bbb}
