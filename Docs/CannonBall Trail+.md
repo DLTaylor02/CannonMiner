@@ -73,8 +73,8 @@ stops, driver changes, police encounters, flat tires, road obstacles, and each
 weather condition are retained as distinct symbols on both maps.
 
 Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
-and scales linearly toward 10 GPM as the crew's combined co-piloting skill
-approaches 150; totals of 150 or higher receive the full 10 GPM rate. Vehicle
+and scales linearly toward 16 GPM as the crew's combined co-piloting skill
+approaches 150; totals of 150 or higher receive the full 16 GPM rate. Vehicle
 deceleration and acceleration continue to occur at 5 mph per second.
 
 Observed traffic delay becomes an evidence-derived speed cap of 65 mph or less
@@ -109,6 +109,13 @@ evidence. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
+Acknowledging an event adds five fatigue points to each crew member whose stats
+contributed to its outcome: the relevant driver and co-pilot for road events,
+the full crew for a successful tire repair, and the current driver for
+skill-driven traffic. Every fuel stop also adds five fatigue points to the full
+crew because their combined co-piloting skill determines fuel flow. This is
+applied when fueling finishes, including when the user changes drivers from the
+fuel-stop dialog. Stat-independent events do not add response fatigue.
 Superadmins can configure the baseline percentage for weather, flat tires,
 headwinds, tailwinds, police, and road events. Mechanical-failure probability
 comes from the selected vehicle's superadmin-managed Lemon rating. Regional and seasonal eligibility
