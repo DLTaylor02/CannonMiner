@@ -38,12 +38,18 @@ The Radio Scanner has an equal chance to produce an early slowdown/pass or
 continue to the normal police result. The Radar Scanner halves the configured
 police-event chance. The Radar Jammer yields a 25% slowdown/pass, 25% normal
 encounter, and 50% bypass; being pulled over with it always ends in jail.
+$1,000 Police Camo makes the car resemble an undercover police vehicle. It
+clears skill-driven traffic without a speed restriction, but any police stop
+with the disguise installed ends the run. Its load cost defaults to 50 and is
+configurable with the other equipment load costs.
 
 Past departures require a directly recorded observation near the time the
 vehicle enters each segment. Future departures use only directly supported
 month, weekday, and local-time evidence. The simulator does not call Google,
-create a Run Window, alter historical analysis, or invent values for unsupported
-traffic conditions.
+create a Run Window, alter historical analysis, or invent evidence for
+unsupported traffic conditions. A separate gameplay event can still represent
+a low-skill driver misreading ordinary traffic; it is never presented as
+recorded or projected traffic evidence.
 
 The simulator worker advances the saved clock and writes structured events for
 segment changes, delays, obstacles, fatigue, fuel stops, and completion. Branch
@@ -94,7 +100,12 @@ jail. Each segment has three independently rolled event windows,
 spread across 15% to 90% of the segment, so more than one random event can occur
 during the same segment. Recorded traffic also begins at a deterministic
 interior point. Its evidence-derived base cap duration reproduces the observed
-delay before the active driver's skill coefficient is applied. Tail winds improve fuel economy by
+delay before the active driver's skill coefficient is applied. Drivers below
+75 effective driving skill can also misread traffic and become stuck behind a
+random slow vehicle for 5 to 10 whole miles. The chance scales linearly from
+100% at zero skill to 0% at 75 skill at each event opportunity. These events
+have distinct map and history entries and do not claim to come from traffic
+evidence. Tail winds improve fuel economy by
 15% and head winds reduce it by 15% for the remainder of the segment. Co-pilot
 and driving-skill effectiveness degrade progressively above 50% fatigue. The
 crew display shows each affected skill's current effective value and reduction.
