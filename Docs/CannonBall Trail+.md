@@ -28,6 +28,10 @@ an encounter before the Radio Scanner. A Radar Jammer cannot be installed
 without a Radar Scanner. The live instrument panel represents installed
 equipment with symbols whose tooltips describe each modifier. The
 builder displays equipment modifiers and total cost without revealing base MPG.
+The $500 Thermal Camera costs 25 load by default. When wildlife enters the road,
+an unequipped crew crashes and the run ends; an equipped crew instead slows to
+65 mph for one mile while the animal clears the route. Wildlife-event chance and
+the camera's load cost are configurable in the game environment.
 The $2,000 Tuned up equipment reduces the selected vehicle's effective Lemon
 rating to 1% for that simulation.
 Each vehicle also has a superadmin-managed maximum load. Drivers and installed

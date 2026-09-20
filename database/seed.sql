@@ -11,11 +11,12 @@ INSERT INTO settings (key, value) VALUES
 ('simulator_crash_base_percent', '1'), ('simulator_crash_120_percent', '14'), ('simulator_crash_145_percent', '14'),
 ('simulator_weather_percent', '5'), ('simulator_flat_tire_percent', '5'),
 ('simulator_headwind_percent', '1'), ('simulator_tailwind_percent', '1'),
-('simulator_police_percent', '5'), ('simulator_road_event_percent', '5'),
+('simulator_police_percent', '5'), ('simulator_road_event_percent', '5'), ('simulator_wildlife_percent', '1'),
 ('simulator_load_driver', '200'), ('simulator_load_fuel_cell', '200'),
 ('simulator_load_additional_spare', '200'), ('simulator_load_cruising_tires', '0'),
 ('simulator_load_cruising_tune', '50'), ('simulator_load_tuned_up', '0'), ('simulator_load_radio_scanner', '1'),
 ('simulator_load_radar_scanner', '5'), ('simulator_load_radar_jammer', '25'), ('simulator_load_police_camo', '50'),
+('simulator_load_thermal_camera', '25'),
 ('simulator_driver_names', E'Doug Tabbut\nDunadel Daryoush\nArne Toman\nChris Duerden\nSafi Barqawi\nChris Benvie\nJames Allen\nKale Odhner\nSamuel Lurie\nChris Allen\nMatt Fried\nChristopher Stowell\nBerkeley Chadwick\nCarl Dietz\nJason Adkins\nMark Spence\nSean Petr\nDave Black\nDan Huang\nEd Bolian\nStephen Thomas\nTommy Thomas\nSteven Groh\nTroy Schneider\nAndrew Calore\nRyan Stark\nDavid Risch\nNik Krueger\nWesley Vigh\nChristopher Michael\nTommy Davies\nRob Pickup\nRobert Pryer\nRomuald Clariond\nSeth Rose\nCameron Davis\nAaron Tulin\nAlex Roy\nDave Maher\nCory Welles\nJohn Levie\nJoe Petralia\nYumi Dietz\nBen Preston\nElijah Dietz\nTaylor Hull\nHunter Robinson\nAndrew Rodgers\nScott Saier\nTim Daley\nWilliam Shafer\nMiles Compton\nSyed Ahmed\nTravis Hilton\nArt Ashmore\nFred Ashmore\nChris Taylor\nAdam Swetlik\nRichard Rawlings\nDennis Collins')
 ON CONFLICT (key) DO NOTHING;
 
