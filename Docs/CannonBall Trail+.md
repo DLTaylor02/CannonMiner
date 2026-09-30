@@ -34,6 +34,12 @@ an unequipped crew crashes and the run ends; an equipped crew instead slows to
 the camera's load cost are configurable in the game environment.
 The $2,000 Tuned up equipment reduces the selected vehicle's effective Lemon
 rating to 1% for that simulation.
+The $35 Cooler full of RedBull costs 25 load by default and contains six drinks.
+Using a drink on a crew member prevents fatigue gain for two in-game hours;
+resting recovery still works normally. Each crew member may consume at most two
+drinks per run. Rejected third drinks remain in inventory. Consumable use and
+expiration pause for an acknowledgement, appear in run history, and are tracked
+against the simulated clock, including time added by stops and delay events.
 Each vehicle also has a superadmin-managed maximum load. Drivers and installed
 equipment consume configurable load values. Simulation setup displays remaining
 load as a percentage, and an overloaded car cannot begin a
