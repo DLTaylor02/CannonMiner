@@ -36,6 +36,18 @@ files remain in `vendor/`. The installer also writes the resolved dependency
 license inventory to `var/composer-licenses.json`; use that generated inventory
 as the authoritative list for the installed versions.
 
+## U.S. Census Bureau cartographic boundaries
+
+The simulator's local state map is derived from the U.S. Census Bureau 2025
+Cartographic Boundary Files for states at 1:20,000,000 scale. CannonMiner
+bundles a coordinate-rounded subset containing the contiguous United States and
+Washington, D.C. Government-produced Census Bureau data is not subject to
+copyright protection in the United States. The source data and its geographic
+accuracy limitations remain attributable to the U.S. Census Bureau:
+
+- https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.2025.html
+- https://www2.census.gov/geo/tiger/GENZ2025/kml/cb_2025_us_state_20m.zip
+
 ## Have I Been Pwned
 
 CannonMiner checks proposed non-superadmin passwords using the free Pwned

@@ -73,7 +73,9 @@ The simulator worker advances the saved clock and writes structured events for
 segment changes, delays, obstacles, fatigue, fuel stops, and completion. Branch
 choices appear only where the route graph has multiple valid paths toward
 Portofino. Driver and co-pilot fatigue rises according to role and endurance;
-rest becomes more effective over time. Changing the driver requires stopping
+rest recovery ramps from 2 to 14 fatigue points per in-game hour over the first
+two continuous hours. This brings a crew member from 100 to 0 fatigue in about
+eight uninterrupted in-game hours. Changing the driver requires stopping
 the vehicle. A driver reaching 100% fatigue is locked into rest until reaching
 50%. If no eligible replacement is available, the crew can rest on the side of
 the road. The vehicle remains stopped while the simulation clock and stopped
@@ -84,7 +86,9 @@ teammate requires rest, at twice the normal driving fatigue rate. Runs can be
 paused and resumed without keeping the browser open.
 
 The live map reuses overview polylines already stored by the collector and does
-not make additional Google requests. Untraveled geometry is gray. Traveled
+not make additional Google requests. A bundled, coordinate-rounded subset of
+the U.S. Census Bureau's 2025 state cartographic boundaries supplies geographic
+context without runtime network requests. Untraveled geometry is gray. Traveled
 geometry is colored from red at zero speed to green at the target speed, and
 the final summary joins the stored polylines for every segment traveled. Fuel
 stops, driver changes, police encounters, flat tires, road obstacles, and each
