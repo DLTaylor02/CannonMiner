@@ -40,6 +40,11 @@ resting recovery still works normally. Each crew member may consume at most two
 drinks per run. Rejected third drinks remain in inventory. Consumable use and
 expiration pause for an acknowledgement, appear in run history, and are tracked
 against the simulated clock, including time added by stops and delay events.
+Snacks cost $15 and consume 20 load each by default. A snack may only be eaten
+by a resting crew member and immediately reduces fatigue by five percentage
+points. Each crew member may eat at most five snacks per run; rejected additional
+snacks remain in inventory. Snack uses and rejections appear in the same crew
+supplies interface, acknowledgement modals, and run history as other consumables.
 Each vehicle also has a superadmin-managed maximum load. Drivers and installed
 equipment consume configurable load values. Simulation setup displays remaining
 load as a percentage, and an overloaded car cannot begin a

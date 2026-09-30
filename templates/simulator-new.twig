@@ -7,6 +7,7 @@
 <fieldset id="car-selection"><legend>Car</legend><div class="vehicle-carousel"><button id="car-previous" class="vehicle-carousel-arrow" type="button" aria-label="Previous vehicle" title="Previous vehicle">&larr;</button><div class="vehicle-carousel-selection" aria-live="polite"><div class="vehicle-carousel-viewport"><div id="car-selector-stage" class="vehicle-carousel-stage"><img id="car-selector-image" width="128" height="128" alt="" hidden><span id="car-selector-placeholder" aria-hidden="true">&#x1f697;</span></div></div><strong id="car-selector-name"></strong></div><button id="car-next" class="vehicle-carousel-arrow" type="button" aria-label="Next vehicle" title="Next vehicle">&rarr;</button><label class="visually-hidden" for="car-selector">Selected vehicle</label><select name="car" id="car-selector" class="visually-hidden" required tabindex="-1" aria-hidden="true">{% for car in cars %}<option value="{{ car.id }}" data-top="{{ car.top_speed }}" data-tuned-top="{{ car.tuned_top_speed }}" data-max-fuel-cells="{{ car.max_fuel_cells }}" data-max-load="{{ car.max_load }}" data-image="{{ car.image_path|default('') }}">{{ car.name }}</option>{% endfor %}</select></div><div id="vehicle-load" class="vehicle-load"><div><span>Remaining car load</span><strong id="vehicle-load-value">--</strong></div><div class="vehicle-load-track"><i id="vehicle-load-bar"></i></div><small id="vehicle-load-warning" role="alert" hidden>The selected crew and equipment exceed this car's maximum load.</small></div></fieldset>
 <fieldset><legend>Car builder</legend><div class="equipment-grid">
 <div class="equipment-stepper"><div><strong>&#x26fd; Fuel cells</strong><span>+20 gal capacity each | $300 each</span></div><div><button type="button" id="fuel-cell-remove" aria-label="Remove fuel cell" title="Remove fuel cell">−</button><output id="fuel-cell-count">0</output><button type="button" id="fuel-cell-add" aria-label="Add fuel cell" title="Add fuel cell">+</button><input type="hidden" id="fuel-cell-input" name="fuel_cells" value="0"></div></div>
+<div class="equipment-stepper"><div><strong>&#x1f37f; Snacks</strong><span>-5% fatigue while resting | $15 each</span></div><div><button type="button" id="snack-remove" aria-label="Remove snack" title="Remove snack">−</button><output id="snack-count">0</output><button type="button" id="snack-add" aria-label="Add snack" title="Add snack">+</button><input type="hidden" id="snack-input" name="snacks" value="0"></div></div>
 <label class="equipment-option"><input type="checkbox" name="cruising_tune" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f6e0;&#xfe0f; Cruising tune</strong><small>+5 MPG above 70 mph; unlock tuned top speed | $1,500</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="tuned_up" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f527; Tuned up</strong><small>Reduces the vehicle's Lemon rating to 1% | $2,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="cruising_tires" value="yes"><i aria-hidden="true"></i><span><strong>&#x25c9; Cruising tires</strong><small>+1 MPG; −50% flat-tire chance | $1,500</small></span></label>
@@ -16,7 +17,7 @@
 <label class="equipment-option"><input type="checkbox" name="radar_jammer" value="yes" disabled><i aria-hidden="true"></i><span><strong>&#x1f6e1;&#xfe0f; Radar Jammer</strong><small>Requires Radar Scanner; active police countermeasure | $1,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="police_camo" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f46e; Police Camo</strong><small>Make the car look like an undercover cop car | $1,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="thermal_camera" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f321;&#xfe0f; Thermal Camera</strong><small>Detects wildlife; limits the vehicle to 65 mph for 1 mile instead of crashing | $500</small></span></label>
-<label class="equipment-option"><input type="checkbox" name="redbull_cooler" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f9ca; Cooler full of RedBull</strong><small>6 drinks; each prevents fatigue gain for 2 in-game hours | $35</small></span></label>
+<label class="equipment-option"><input type="checkbox" name="redbull_cooler" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f964; Cooler full of RedBull</strong><small>6 drinks; each prevents fatigue gain for 2 in-game hours | $35</small></span></label>
 </div><div class="equipment-summary"><div><p class="kicker">Modifiers</p><ul id="equipment-modifiers"><li>No equipment modifiers</li></ul></div><div><span>Total equipment cost</span><strong id="equipment-cost">$0</strong></div></div></fieldset>
 <button id="begin-simulation" class="simulator-primary">Begin simulation</button></form>
 <dialog id="setup-speed-warning-120"><div class="decision-heading"><p class="kicker">High-speed warning</p><h2>The road just got serious</h2></div><p>This car can now run beyond 120 mph. The scenery is blurring, the fuel gauge is nervous, and one bad roll can end the party before Portofino. The chance of a crash has increased.</p><div class="decision-options"><button class="decision-ok" type="button">I understand</button></div></dialog>
@@ -32,6 +33,8 @@ const carSelectorName = document.getElementById('car-selector-name');
 const carSelectorStage = document.getElementById('car-selector-stage');
 const fuelCellInput = document.getElementById('fuel-cell-input');
 const fuelCellCount = document.getElementById('fuel-cell-count');
+const snackInput = document.getElementById('snack-input');
+const snackCount = document.getElementById('snack-count');
 const tuneInput = document.querySelector('[name=cruising_tune]');
 const tunedUpInput = document.querySelector('[name=tuned_up]');
 const tiresInput = document.querySelector('[name=cruising_tires]');
@@ -57,7 +60,7 @@ function syncLoad() {
   const car = carSelector.selectedOptions[0];
   const maximum = Number(car.dataset.maxLoad);
   const drivers = 1 + rosterChecks.filter(check => check.checked).length;
-  const used = drivers * Number(loadCosts.driver) + Number(fuelCellInput.value) * Number(loadCosts.fuel_cell)
+  const used = drivers * Number(loadCosts.driver) + Number(fuelCellInput.value) * Number(loadCosts.fuel_cell) + Number(snackInput.value) * Number(loadCosts.snack)
     + (additionalSpareInput.checked ? Number(loadCosts.additional_spare) : 0)
     + (tiresInput.checked ? Number(loadCosts.cruising_tires) : 0)
     + (tuneInput.checked ? Number(loadCosts.cruising_tune) : 0)
@@ -115,10 +118,15 @@ function syncEquipment() {
   carSelectorName.textContent = selectedCar.textContent;
   const max = Number(carSelector.selectedOptions[0].dataset.maxFuelCells);
   const cells = Math.max(0, Math.min(max, Number(fuelCellInput.value) || 0));
+  const snacks = Math.max(0, Math.min(1000, Number(snackInput.value) || 0));
   fuelCellInput.value = String(cells);
   fuelCellCount.value = String(cells);
+  snackInput.value = String(snacks);
+  snackCount.value = String(snacks);
   document.getElementById('fuel-cell-remove').disabled = cells === 0;
   document.getElementById('fuel-cell-add').disabled = cells === max;
+  document.getElementById('snack-remove').disabled = snacks === 0;
+  document.getElementById('snack-add').disabled = snacks === 1000;
   jammerInput.disabled = !radarInput.checked;
   if (jammerInput.disabled) jammerInput.checked = false;
 
@@ -134,10 +142,11 @@ function syncEquipment() {
   if (policeCamoInput.checked) modifiers.push('Traffic moves aside; every police stop ends the run');
   if (thermalCameraInput.checked) modifiers.push('Wildlife detected; 1 mile at 65 mph instead of a collision');
   if (redbullCoolerInput.checked) modifiers.push('6 RedBulls; 2 hours without fatigue gain per drink');
+  if (snacks) modifiers.push(`${snacks} snack${snacks === 1 ? '' : 's'}; each restores 5% fatigue while resting`);
   document.getElementById('equipment-modifiers').innerHTML = (modifiers.length ? modifiers : ['No equipment modifiers'])
     .map(item => `<li>${item}</li>`).join('');
 
-  const cost = cells * 300 + (tuneInput.checked ? 1500 : 0) + (tunedUpInput.checked ? 2000 : 0) + (tiresInput.checked ? 1500 : 0) + (additionalSpareInput.checked ? 500 : 0)
+  const cost = cells * 300 + snacks * 15 + (tuneInput.checked ? 1500 : 0) + (tunedUpInput.checked ? 2000 : 0) + (tiresInput.checked ? 1500 : 0) + (additionalSpareInput.checked ? 500 : 0)
     + (radioInput.checked ? 250 : 0) + (radarInput.checked ? 600 : 0) + (jammerInput.checked ? 1000 : 0) + (policeCamoInput.checked ? 1000 : 0) + (thermalCameraInput.checked ? 500 : 0) + (redbullCoolerInput.checked ? 35 : 0);
   document.getElementById('equipment-cost').textContent = new Intl.NumberFormat(undefined, {
     style: 'currency', currency: 'USD', maximumFractionDigits: 0
@@ -217,6 +226,14 @@ document.getElementById('fuel-cell-remove').addEventListener('click', () => {
 });
 document.getElementById('fuel-cell-add').addEventListener('click', () => {
   fuelCellInput.value = String(Number(fuelCellInput.value) + 1);
+  syncEquipment();
+});
+document.getElementById('snack-remove').addEventListener('click', () => {
+  snackInput.value = String(Number(snackInput.value) - 1);
+  syncEquipment();
+});
+document.getElementById('snack-add').addEventListener('click', () => {
+  snackInput.value = String(Number(snackInput.value) + 1);
   syncEquipment();
 });
 tuneInput.addEventListener('change', () => { syncEquipment(); warnSpeed(); });
