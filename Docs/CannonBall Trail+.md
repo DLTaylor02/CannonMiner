@@ -36,13 +36,16 @@ The $2,000 Tuned up equipment reduces the selected vehicle's effective Lemon
 rating to 1% for that simulation.
 The $35 Cooler full of RedBull costs 25 load by default and contains six drinks.
 Using a drink on a crew member prevents fatigue gain for two in-game hours;
-resting recovery still works normally. Each crew member may consume at most two
-drinks per run. Rejected third drinks remain in inventory. Consumable use and
+resting recovery still works normally. Each crew member may consume at most four
+drinks per run. A third drink temporarily removes 10 driving-skill points, and a
+fourth temporarily removes another 20 points. Each penalty clears independently
+after the crew member recovers 50 fatigue points. Rejected fifth drinks remain
+in inventory. Consumable use and
 expiration pause for an acknowledgement, appear in run history, and are tracked
 against the simulated clock, including time added by stops and delay events.
-Snacks cost $15 and consume 20 load each by default. A snack may only be eaten
-by a resting crew member and immediately reduces fatigue by five percentage
-points. Each crew member may eat at most five snacks per run; rejected additional
+Snacks cost $15 and consume 20 load each by default. Any crew member may eat a
+snack to immediately reduce fatigue by five percentage points. Each crew member
+may eat at most five snacks per run; rejected additional
 snacks remain in inventory. Snack uses and rejections appear in the same crew
 supplies interface, acknowledgement modals, and run history as other consumables.
 Each vehicle also has a superadmin-managed maximum load. Drivers and installed
