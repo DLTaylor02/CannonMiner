@@ -26,6 +26,7 @@
   let fuelAnimationFrame = null;
   let fuelCompletionSent = false;
   let fuelInteractionPending = false;
+  let fuelPendingStep = null;
   let fuelingStartedAt = 0;
   const liveMapLayers = new Map();
   if (typeof performance.setResourceTimingBufferSize === 'function') performance.setResourceTimingBufferSize(150);
@@ -332,8 +333,8 @@
   function fuelCardPosition(phase) { if (fuelDrag?.kind === 'card') return fuelDrag.position; return phase === 'return_card' ? {x:762,y:172} : {x:88,y:382}; }
   function fuelNozzlePosition(phase) {
     if (fuelDrag?.kind === 'nozzle') return fuelDrag.position;
-    if (fuelInteractionPending && phase === 'connect_nozzle') return {x:520,y:335};
-    if (fuelInteractionPending && phase === 'return_nozzle') return {x:835,y:323};
+    if (fuelPendingStep === 'nozzle_car') return {x:520,y:335};
+    if (fuelPendingStep === 'nozzle_pump') return {x:835,y:323};
     return ['fueling','return_nozzle'].includes(phase) ? {x:520,y:335} : {x:835,y:323};
   }
 
@@ -363,7 +364,7 @@
     const phaseChanged=fuelGameState?.phase!==pending.phase;fuelGameState=pending;fuelGameCanvas.hidden=false;document.querySelector('.simulation-map-status').hidden=true;if(phaseChanged){fuelDrag=null;fuelCompletionSent=false;if(pending.phase==='fueling')fuelingStartedAt=Date.now();}drawFuelMinigame();
   }
 
-  async function fuelAction(step,value) { if(fuelInteractionPending)return;fuelInteractionPending=true;try{await act('fuel_minigame',{step,value:value??''});}finally{fuelInteractionPending=false;} }
+  async function fuelAction(step,value) { if(fuelInteractionPending)return;fuelInteractionPending=true;fuelPendingStep=step;try{await act('fuel_minigame',{step,value:value??''});}finally{fuelInteractionPending=false;fuelPendingStep=null;drawFuelMinigame();} }
 
   fuelGameCanvas.addEventListener('pointerdown',event=>{
     if(!canControl||!fuelGameState||fuelInteractionPending)return;const point=fuelPoint(event),phase=fuelGameState.phase;
