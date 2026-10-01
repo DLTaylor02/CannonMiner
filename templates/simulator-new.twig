@@ -265,12 +265,11 @@ setupForm.addEventListener('submit', async event => {
     }
     setupError.textContent = 'No directly supported traffic data is available for the selected departure day. Choose another date.';
     setupError.hidden = false;
-    setupError.scrollIntoView({behavior: 'smooth', block: 'start'});
-    setupError.focus({preventScroll: true});
+    requestAnimationFrame(() => { setupError.scrollIntoView({behavior: 'smooth', block: 'start'}); setupError.focus({preventScroll: true}); });
   } catch (error) {
     setupError.textContent = error.message;
     setupError.hidden = false;
-    setupError.scrollIntoView({behavior: 'smooth', block: 'start'});
+    requestAnimationFrame(() => { setupError.scrollIntoView({behavior: 'smooth', block: 'start'}); setupError.focus({preventScroll: true}); });
   } finally {
     beginSimulation.disabled = false;
   }
