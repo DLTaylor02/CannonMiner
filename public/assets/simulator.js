@@ -84,6 +84,38 @@
     return point => { const mapped = mercator(point); return [pad + (mapped[0] - minX) * scale, targetCanvas.height - pad - (mapped[1] - minY) * scale]; };
   }
 
+  function stateLabelArea(polygon, project, canvas) {
+    const points = [];
+    for (let index = 0; index + 1 < polygon.outer.length; index += 2) points.push(project([polygon.outer[index], polygon.outer[index + 1]]));
+    if (points.length < 3) return null;
+    const minY = Math.max(9, Math.min(...points.map(point => point[1]))), maxY = Math.min(canvas.height - 9, Math.max(...points.map(point => point[1])));
+    if (maxY <= minY) return null;
+    const spansAt = y => {
+      const intersections = [];
+      points.forEach((point, index) => {
+        const next = points[(index + 1) % points.length];
+        if ((point[1] > y) === (next[1] > y)) return;
+        intersections.push(point[0] + (y - point[1]) * (next[0] - point[0]) / (next[1] - point[1]));
+      });
+      intersections.sort((a, b) => a - b);
+      const spans = [];
+      for (let index = 0; index + 1 < intersections.length; index += 2) {
+        const left = Math.max(4, intersections[index]), right = Math.min(canvas.width - 4, intersections[index + 1]);
+        if (right > left) spans.push([left, right]);
+      }
+      return spans;
+    };
+    let best = null;
+    for (let step = 0; step <= 20; step += 1) {
+      const y = minY + (maxY - minY) * step / 20, centerSpans = spansAt(y), upperSpans = spansAt(y - 8), lowerSpans = spansAt(y + 8);
+      centerSpans.forEach(center => upperSpans.forEach(upper => lowerSpans.forEach(lower => {
+        const left = Math.max(center[0], upper[0], lower[0]), right = Math.min(center[1], upper[1], lower[1]), width = right - left;
+        if (width > 0 && (!best || width > best.width)) best = {x: (left + right) / 2, y, width, height: 16, area: width * 16};
+      })));
+    }
+    return best;
+  }
+
   function drawStateBoundaries(target, project, showLabels = false) {
     if (!stateBoundaries?.length) return false;
     const stateLabels = [];
@@ -91,18 +123,17 @@
       let bestLabelArea = null;
       target.beginPath();
       (state.polygons || []).forEach(polygon => {
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         [polygon.outer, ...(polygon.holes || [])].forEach(ring => {
           if (!Array.isArray(ring) || ring.length < 4) return;
-          for (let index = 0; index + 1 < ring.length; index += 2) { const [x, y] = project([ring[index], ring[index + 1]]); if (index === 0) target.moveTo(x, y); else target.lineTo(x, y); if (ring === polygon.outer) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } }
+          for (let index = 0; index + 1 < ring.length; index += 2) { const [x, y] = project([ring[index], ring[index + 1]]); if (index === 0) target.moveTo(x, y); else target.lineTo(x, y); }
           target.closePath();
         });
-        const left = Math.max(0, minX), right = Math.min(target.canvas.width, maxX), top = Math.max(0, minY), bottom = Math.min(target.canvas.height, maxY), width = right - left, height = bottom - top;
-        if (width > 0 && height > 0 && (!bestLabelArea || width * height > bestLabelArea.area)) bestLabelArea = {x: (left + right) / 2, y: (top + bottom) / 2, width, height, area: width * height};
+        const labelArea = showLabels ? stateLabelArea(polygon, project, target.canvas) : null;
+        if (labelArea && (!bestLabelArea || labelArea.area > bestLabelArea.area)) bestLabelArea = labelArea;
       });
       target.fillStyle = stateIndex % 2 === 0 ? '#18231e' : '#1d2923'; target.fill('evenodd');
       target.strokeStyle = 'rgba(174,194,183,.52)'; target.lineWidth = 1.15; target.stroke();
-      if (showLabels && bestLabelArea && bestLabelArea.width >= 48 && bestLabelArea.height >= 24 && bestLabelArea.area >= 1600) stateLabels.push({...bestLabelArea, name: state.name});
+      if (showLabels && bestLabelArea && bestLabelArea.width >= 48) stateLabels.push({...bestLabelArea, name: state.name});
     });
     if (showLabels) {
       target.font = 'bold 13px sans-serif'; target.textAlign = 'center'; target.textBaseline = 'middle';
