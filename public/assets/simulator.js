@@ -15,7 +15,9 @@
   let speedTimer = null;
   let currentVehicleTop = Infinity;
   let latestState = null;
+  let latestSimulation = null;
   let stateBoundaries = null;
+  let mapHistoryIndex = null;
   const fmt = new Intl.DateTimeFormat(undefined, {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short'});
   const newYorkFmt = new Intl.DateTimeFormat(undefined, {weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short'});
   const daylightStatus = value => { const hour = value.getHours(); if (hour >= 5 && hour < 8) return {icon: '\u{1f305}', label: 'Sunrise'}; if (hour >= 8 && hour < 17) return {icon: '\u2600\ufe0f', label: 'Daylight'}; if (hour >= 17 && hour < 20) return {icon: '\u{1f307}', label: 'Sunset'}; return {icon: '\u{1f319}', label: 'Night'}; };
@@ -27,7 +29,7 @@
   const eventSymbol = (type, payload = {}) => { if (['consumable_used', 'consumable_rejected', 'consumable_wore_off'].includes(type)) return payload.consumable === 'snack' ? '\u{1f37f}' : '\u{1f964}'; if (type === 'weather_event') return mapEventSymbols[`weather_${payload.weather}`] || ''; if (type === 'driver_changed' || type === 'driver_change_complete') return mapEventSymbols.driver_change; if (type === 'traffic_delay' || type === 'traffic_cap_lifted') return mapEventSymbols.traffic_event; if (type === 'invented_traffic_cleared' || type === 'event_acknowledged') return mapEventSymbols.obstacle_response; if (type === 'flat_tire_ended_run') return mapEventSymbols.flat_tire; if (type === 'mechanical_failure_ended_run') return mapEventSymbols.mechanical_failure; if (type === 'crew_jailed') return mapEventSymbols.police_event; return mapEventSymbols[type] || ''; };
   const locationName = node => locations[node] || String(node).replaceAll('_', ' ');
   const routeName = name => String(name).split('_to_').map(locationName).join(' to ');
-  fetch('/assets/data/us-states-20m.json', {cache: 'force-cache'}).then(response => { if (!response.ok) throw new Error('State map unavailable'); return response.json(); }).then(data => { stateBoundaries = data.states || []; if (latestState) { drawMap(latestState.current_segment); if (!document.getElementById('simulation-summary').hidden) drawSummaryMap(latestState); } }).catch(() => {});
+  fetch('/assets/data/us-states-20m.json', {cache: 'force-cache'}).then(response => { if (!response.ok) throw new Error('State map unavailable'); return response.json(); }).then(data => { stateBoundaries = data.states || []; if (latestState) { renderLiveMap(latestState); if (!document.getElementById('simulation-summary').hidden) drawSummaryMap(latestState); } }).catch(() => {});
   const equipmentMarkup = (equipment, consumables = {}) => { const items = [], cells = Number(equipment?.fuel_cells || 0); for (let cell = 1; cell <= cells; cell += 1) items.push({icon: '\u26fd', text: `Fuel cell ${cell} of ${cells}: +20 gal capacity`}); if (equipment?.cruising_tune) items.push({icon: '\u{1f6e0}\ufe0f', text: 'Cruising tune: +5 MPG above 70 mph; tuned top speed unlocked'}); if (equipment?.tuned_up) items.push({icon: '\u{1f527}', text: 'Tuned up: Lemon rating reduced to 1%'}); if (equipment?.cruising_tires) items.push({icon: '\u25c9', text: 'Cruising tires: +1 MPG; flat-tire chance reduced 50%'}); if (equipment?.additional_spare && !equipment?.additional_spare_consumed) items.push({icon: '\u{1f9f0}', text: 'Additional Spare: one additional recoverable flat tire'}); if (equipment?.radio_scanner) items.push({icon: '\u{1f4fb}', text: 'Radio Scanner: early warning police response'}); if (equipment?.radar_scanner) items.push({icon: '\u{1f4e1}', text: 'Radar Scanner: police encounter chance reduced 50%'}); if (equipment?.radar_jammer) items.push({icon: '\u{1f6e1}\ufe0f', text: 'Radar Jammer: active police countermeasure'}); if (equipment?.police_camo) items.push({icon: '\u{1f46e}', text: 'Police Camo: traffic moves aside; every police stop ends the run'}); if (equipment?.thermal_camera) items.push({icon: '\u{1f321}\ufe0f', text: 'Thermal Camera: wildlife detection prevents a collision'}); if (equipment?.redbull_cooler) items.push({icon: '\u{1f964}', text: `RedBull cooler: ${Number(consumables?.redbull?.remaining || 0)} of 6 remaining`}); if (Number(equipment?.snacks || 0) > 0) items.push({icon: '\u{1f37f}', text: `Snacks: ${Number(consumables?.snack?.remaining || 0)} of ${Number(equipment.snacks)} remaining`}); return items.length ? items.map(item => `<span tabindex="0" title="${escape(item.text)}" aria-label="${escape(item.text)}">${item.icon}</span>`).join('') : 'None'; };
   const equipmentSummary = equipment => { const items = [], cells = Number(equipment?.fuel_cells || 0); if (cells) items.push({icon: '\u26fd', text: `${cells} fuel cell${cells === 1 ? '' : 's'}`}); if (equipment?.cruising_tune) items.push({icon: '\u{1f6e0}\ufe0f', text: 'Cruising tune'}); if (equipment?.tuned_up) items.push({icon: '\u{1f527}', text: 'Tuned up'}); if (equipment?.cruising_tires) items.push({icon: '\u25c9', text: 'Cruising tires'}); if (equipment?.additional_spare) items.push({icon: '\u{1f9f0}', text: 'Additional Spare'}); if (equipment?.radio_scanner) items.push({icon: '\u{1f4fb}', text: 'Radio Scanner'}); if (equipment?.radar_scanner) items.push({icon: '\u{1f4e1}', text: 'Radar Scanner'}); if (equipment?.radar_jammer) items.push({icon: '\u{1f6e1}\ufe0f', text: 'Radar Jammer'}); if (equipment?.police_camo) items.push({icon: '\u{1f46e}', text: 'Police Camo'}); if (equipment?.thermal_camera) items.push({icon: '\u{1f321}\ufe0f', text: 'Thermal Camera'}); if (equipment?.redbull_cooler) items.push({icon: '\u{1f964}', text: 'Cooler full of RedBull'}); if (Number(equipment?.snacks || 0) > 0) items.push({icon: '\u{1f37f}', text: `${Number(equipment.snacks)} snack${Number(equipment.snacks) === 1 ? '' : 's'}`}); return items; };
 
@@ -82,25 +84,41 @@
     return point => { const mapped = mercator(point); return [pad + (mapped[0] - minX) * scale, targetCanvas.height - pad - (mapped[1] - minY) * scale]; };
   }
 
-  function drawStateBoundaries(target, project) {
+  function drawStateBoundaries(target, project, showLabels = false) {
     if (!stateBoundaries?.length) return false;
+    const stateLabels = [];
     stateBoundaries.forEach((state, stateIndex) => {
+      let bestLabelArea = null;
       target.beginPath();
       (state.polygons || []).forEach(polygon => {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         [polygon.outer, ...(polygon.holes || [])].forEach(ring => {
           if (!Array.isArray(ring) || ring.length < 4) return;
-          for (let index = 0; index + 1 < ring.length; index += 2) { const [x, y] = project([ring[index], ring[index + 1]]); if (index === 0) target.moveTo(x, y); else target.lineTo(x, y); }
+          for (let index = 0; index + 1 < ring.length; index += 2) { const [x, y] = project([ring[index], ring[index + 1]]); if (index === 0) target.moveTo(x, y); else target.lineTo(x, y); if (ring === polygon.outer) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } }
           target.closePath();
         });
+        const left = Math.max(0, minX), right = Math.min(target.canvas.width, maxX), top = Math.max(0, minY), bottom = Math.min(target.canvas.height, maxY), width = right - left, height = bottom - top;
+        if (width > 0 && height > 0 && (!bestLabelArea || width * height > bestLabelArea.area)) bestLabelArea = {x: (left + right) / 2, y: (top + bottom) / 2, width, height, area: width * height};
       });
       target.fillStyle = stateIndex % 2 === 0 ? '#18231e' : '#1d2923'; target.fill('evenodd');
       target.strokeStyle = 'rgba(174,194,183,.52)'; target.lineWidth = 1.15; target.stroke();
+      if (showLabels && bestLabelArea && bestLabelArea.width >= 48 && bestLabelArea.height >= 24 && bestLabelArea.area >= 1600) stateLabels.push({...bestLabelArea, name: state.name});
     });
+    if (showLabels) {
+      target.font = 'bold 13px sans-serif'; target.textAlign = 'center'; target.textBaseline = 'middle';
+      stateLabels.forEach(label => { if (target.measureText(label.name).width > label.width - 8) return; target.fillStyle = 'rgba(222,232,226,.56)'; target.fillText(label.name, label.x, label.y); });
+    }
     return true;
   }
 
   function drawSummaryLocations(target, decoded, project, occupiedEvents = []) {
-    const nodes = [], seen = new Set(), labels = [];
+    const nodes = [], seen = new Set(), labels = [], routeLines = decoded.map(({points}) => points.map(project));
+    const routeCrosses = box => routeLines.some(line => line.some((point, index) => {
+      if (!index) return false;
+      const previous = line[index - 1], distance = Math.hypot(point[0] - previous[0], point[1] - previous[1]), steps = Math.max(1, Math.ceil(distance / 5));
+      for (let step = 0; step <= steps; step += 1) { const share = step / steps, x = previous[0] + (point[0] - previous[0]) * share, y = previous[1] + (point[1] - previous[1]) * share; if (x >= box.x - 7 && x <= box.x + box.width + 7 && y >= box.y - 7 && y <= box.y + box.height + 7) return true; }
+      return false;
+    }));
     decoded.forEach(({segment, points}) => {
       [[segment.start, points[0]], [segment.end, points[points.length - 1]]].forEach(([node, point]) => {
         if (!node || seen.has(node)) return;
@@ -111,13 +129,13 @@
     nodes.forEach(({node, point}, index) => {
       const [routeX, routeY] = project(point), text = locationName(node), width = Math.ceil(target.measureText(text).width) + 14, height = 26;
       const above = index % 2 === 0;
-      const offsets = above ? [[0,-42],[0,16],[0,-72],[0,46]] : [[0,16],[0,-42],[0,46],[0,-72]];
+      const offsets = above ? [[0,-42],[0,16],[0,-72],[0,46],[0,-102],[0,76],[width / 2 + 22,-13],[-width / 2 - 22,-13]] : [[0,16],[0,-42],[0,46],[0,-72],[0,76],[0,-102],[width / 2 + 22,-13],[-width / 2 - 22,-13]];
       let box = null;
       for (const [offsetX, offsetY] of offsets) {
         const candidate = {x: Math.max(4, Math.min(target.canvas.width - width - 4, routeX - width / 2 + offsetX)), y: Math.max(4, Math.min(target.canvas.height - height - 4, routeY + offsetY)), width, height};
         const avoidsLabels = labels.every(label => candidate.x + candidate.width + 5 < label.x || label.x + label.width + 5 < candidate.x || candidate.y + candidate.height + 5 < label.y || label.y + label.height + 5 < candidate.y);
         const avoidsEvents = occupiedEvents.every(event => event.x < candidate.x - 15 || event.x > candidate.x + candidate.width + 15 || event.y < candidate.y - 15 || event.y > candidate.y + candidate.height + 15);
-        if (avoidsLabels && avoidsEvents) { box = candidate; break; }
+        if (avoidsLabels && avoidsEvents && !routeCrosses(candidate)) { box = candidate; break; }
       }
       box ||= {x: Math.max(4, Math.min(target.canvas.width - width - 4, routeX - width / 2)), y: Math.max(4, Math.min(target.canvas.height - height - 4, routeY + 16)), width, height};
       labels.push(box);
@@ -129,7 +147,7 @@
     });
   }
 
-  function drawMap(segment) {
+  function drawMap(segment, showVehicle = true) {
     context.fillStyle = '#101713'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.strokeStyle = 'rgba(255,255,255,.06)'; context.lineWidth = 1;
     for (let x = 0; x < canvas.width; x += 50) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, canvas.height); context.stroke(); }
@@ -138,13 +156,29 @@
     const points = decodePolyline(segment.polyline);
     if (points.length < 2) return;
     const project = routeProjection(canvas, points, 55);
-    drawStateBoundaries(context, project);
+    drawStateBoundaries(context, project, true);
     strokeRange(context, points, project, 0, 1, '#66706b');
     (segment.speed_trace || []).forEach(band => strokeRange(context, points, project, Number(band.from), Number(band.to), speedColor(band.ratio)));
     drawMapEvents(context, points, project, segment.map_events, -25);
+    if (!showVehicle) return;
     const fraction = Math.max(0, Math.min(1, segment.progress_fraction ?? (segment.elapsed_seconds / Math.max(1, segment.total_seconds)))), position = fraction * (points.length - 1), low = Math.floor(position), share = position - low;
     const a = project(points[low]), b = project(points[Math.min(points.length - 1, low + 1)]), x = a[0] + (b[0] - a[0]) * share, y = a[1] + (b[1] - a[1]) * share;
     context.fillStyle = '#fff'; context.beginPath(); context.arc(x, y, 11, 0, Math.PI * 2); context.fill(); context.fillStyle = '#e93d32'; context.beginPath(); context.arc(x, y, 7, 0, Math.PI * 2); context.fill();
+  }
+
+  function renderLiveMap(state) {
+    const segments = [...(state.traveled_segments || [])];
+    if (state.current_segment?.polyline) segments.push(state.current_segment);
+    const latestIndex = segments.length - 1;
+    if (mapHistoryIndex !== null) mapHistoryIndex = Math.max(0, Math.min(latestIndex, mapHistoryIndex));
+    const selectedIndex = mapHistoryIndex === null ? latestIndex : mapHistoryIndex, segment = segments[selectedIndex] || null, active = Boolean(state.current_segment) && selectedIndex === latestIndex;
+    document.getElementById('map-segment-previous').disabled = selectedIndex <= 0;
+    document.getElementById('map-segment-next').disabled = selectedIndex >= latestIndex;
+    if (!segment) { document.querySelector('.simulation-map-status').hidden = true; drawMap(null); return; }
+    document.getElementById('simulation-location').textContent = routeName(segment.name || `${segment.start}_to_${segment.end}`);
+    if (!active) document.getElementById('simulation-traffic').textContent = `Completed segment ${selectedIndex + 1} of ${segments.length}`;
+    document.querySelector('.simulation-map-status').hidden = !active;
+    drawMap(segment, active);
   }
 
   function drawSummaryMap(state) {
@@ -249,7 +283,7 @@
   }
 
   function render(simulation) {
-    currentStatus = simulation.status;
+    latestSimulation = simulation; currentStatus = simulation.status;
     statusNode.textContent = (simulation.state.roadside_rest ? 'roadside rest' : simulation.status.replaceAll('_', ' ')).replace(/\b\w/g, char => char.toUpperCase());
     const simulationDate = new Date(simulation.simulated_at), daylight = daylightStatus(simulationDate); timeNode.textContent = `${daylight.icon} ${fmt.format(simulationDate)}`; timeNode.title = daylight.label;
     const state = simulation.state; latestState = state; const vehicle = state.vehicle, segment = state.current_segment; currentVehicleTop = vehicle.top_speed === undefined ? Infinity : Number(vehicle.tuned ? vehicle.tuned_top_speed : vehicle.top_speed);
@@ -257,7 +291,7 @@
     const summaryVehicleImage = document.getElementById('summary-car-image'), summaryVehicleFallback = document.getElementById('summary-car-fallback'); summaryVehicleImage.hidden = !vehicle.image_path; summaryVehicleFallback.hidden = Boolean(vehicle.image_path); if (vehicle.image_path && summaryVehicleImage.src !== new URL(vehicle.image_path, window.location.origin).href) { summaryVehicleImage.src = vehicle.image_path; summaryVehicleImage.alt = vehicle.name || 'Selected vehicle'; }
     const speedInput = document.getElementById('speed-control'); if (document.activeElement !== speedInput) speedInput.value = Math.round(vehicle.target_speed);
     const fuelShare = 100 * vehicle.fuel / vehicle.capacity, fuelBar = document.getElementById('sim-fuel-bar'); fuelBar.style.width = fuelShare + '%'; fuelBar.style.background = fuelShare < 15 ? 'var(--red)' : fuelShare < 35 ? '#f0b429' : 'var(--green)';
-    const trafficStarted = segment && (segment.traffic_started ?? true), trafficEnd = segment?.traffic_end_elapsed ?? segment?.traffic_cap_seconds, trafficActive = segment?.traffic_speed_cap && segment.traffic_speed_cap < segment.cruising_speed && trafficStarted && segment.elapsed_seconds < trafficEnd, inventedTraffic = state.active_invented_traffic || null; document.getElementById('simulation-location').textContent = segment ? `${locationName(segment.start)} to ${locationName(segment.end)}` : locationName(state.node); document.getElementById('simulation-traffic').textContent = segment ? `${segment.traffic_source} traffic${trafficActive ? ` | ${Number(segment.traffic_speed_cap).toFixed(0)} mph observed cap` : ''}${inventedTraffic ? ` | stuck behind ${inventedTraffic.blocker}` : ''} | ${Math.round(100 * (segment.progress_fraction ?? segment.elapsed_seconds / Math.max(1, segment.total_seconds)))}% of segment` : state.traffic_mode + ' traffic'; const weatherNode = document.getElementById('simulation-weather'), trafficIcon = document.getElementById('simulation-traffic-icon'), vehicleLimitIcon = document.getElementById('simulation-vehicle-limit'), weather = state.active_weather || (segment?.status_icon ? {icon: segment.status_icon, weather: segment.weather, speed_cap: segment.cruising_speed, mpg_multiplier: segment.mpg_multiplier} : null); weatherNode.hidden = !weather; weatherNode.textContent = weather?.icon || ''; weatherNode.title = weather ? `${String(weather.weather).replace('_', ' ')}${weather.speed_cap !== null ? ` | ${weather.speed_cap} mph maximum` : ` | ${Math.round(weather.mpg_multiplier * 100)}% fuel economy`}` : ''; trafficIcon.hidden = !trafficActive && !inventedTraffic; trafficIcon.textContent = inventedTraffic ? '\u{1f68c}' : '\u{1f6a6}'; trafficIcon.title = inventedTraffic ? `Stuck behind a ${inventedTraffic.blocker} | ${Number(inventedTraffic.speed_cap).toFixed(0)} mph maximum` : trafficActive ? `Observed traffic | ${Number(segment.traffic_speed_cap).toFixed(0)} mph maximum` : ''; const externalCap = (trafficActive && Number(segment.traffic_speed_cap) < currentVehicleTop) || (inventedTraffic && Number(inventedTraffic.speed_cap) < currentVehicleTop) || (weather?.speed_cap !== null && Number(weather?.speed_cap) < currentVehicleTop), vehicleLimitActive = Number.isFinite(currentVehicleTop) && Number(vehicle.target_speed) > currentVehicleTop && !externalCap; vehicleLimitIcon.hidden = !vehicleLimitActive; vehicleLimitIcon.title = vehicleLimitActive ? `${vehicle.name || 'Vehicle'} | ${currentVehicleTop} mph maximum` : ''; drawMap(segment);
+    const trafficStarted = segment && (segment.traffic_started ?? true), trafficEnd = segment?.traffic_end_elapsed ?? segment?.traffic_cap_seconds, trafficActive = segment?.traffic_speed_cap && segment.traffic_speed_cap < segment.cruising_speed && trafficStarted && segment.elapsed_seconds < trafficEnd, inventedTraffic = state.active_invented_traffic || null; document.getElementById('simulation-location').textContent = segment ? `${locationName(segment.start)} to ${locationName(segment.end)}` : locationName(state.node); document.getElementById('simulation-traffic').textContent = segment ? `${segment.traffic_source} traffic${trafficActive ? ` | ${Number(segment.traffic_speed_cap).toFixed(0)} mph observed cap` : ''}${inventedTraffic ? ` | stuck behind ${inventedTraffic.blocker}` : ''} | ${Math.round(100 * (segment.progress_fraction ?? segment.elapsed_seconds / Math.max(1, segment.total_seconds)))}% of segment` : state.traffic_mode + ' traffic'; const weatherNode = document.getElementById('simulation-weather'), trafficIcon = document.getElementById('simulation-traffic-icon'), vehicleLimitIcon = document.getElementById('simulation-vehicle-limit'), weather = state.active_weather || (segment?.status_icon ? {icon: segment.status_icon, weather: segment.weather, speed_cap: segment.cruising_speed, mpg_multiplier: segment.mpg_multiplier} : null); weatherNode.hidden = !weather; weatherNode.textContent = weather?.icon || ''; weatherNode.title = weather ? `${String(weather.weather).replace('_', ' ')}${weather.speed_cap !== null ? ` | ${weather.speed_cap} mph maximum` : ` | ${Math.round(weather.mpg_multiplier * 100)}% fuel economy`}` : ''; trafficIcon.hidden = !trafficActive && !inventedTraffic; trafficIcon.textContent = inventedTraffic ? '\u{1f68c}' : '\u{1f6a6}'; trafficIcon.title = inventedTraffic ? `Stuck behind a ${inventedTraffic.blocker} | ${Number(inventedTraffic.speed_cap).toFixed(0)} mph maximum` : trafficActive ? `Observed traffic | ${Number(segment.traffic_speed_cap).toFixed(0)} mph maximum` : ''; const externalCap = (trafficActive && Number(segment.traffic_speed_cap) < currentVehicleTop) || (inventedTraffic && Number(inventedTraffic.speed_cap) < currentVehicleTop) || (weather?.speed_cap !== null && Number(weather?.speed_cap) < currentVehicleTop), vehicleLimitActive = Number.isFinite(currentVehicleTop) && Number(vehicle.target_speed) > currentVehicleTop && !externalCap; vehicleLimitIcon.hidden = !vehicleLimitActive; vehicleLimitIcon.title = vehicleLimitActive ? `${vehicle.name || 'Vehicle'} | ${currentVehicleTop} mph maximum` : ''; renderLiveMap(state);
     document.getElementById('driver-cards').innerHTML = state.drivers.map(driver => { const role = driver.role === 'driver' && state.driver_copilot ? 'driver / co-pilot' : driver.role, roleIcons = driver.role === 'rest' ? ' <span role="img" aria-label="Resting" title="Resting">\u{1f634}</span>' : `${driver.role === 'driver' ? ' <span role="img" aria-label="Driver" title="Driver">\u{1f697}</span>' : ''}${driver.role === 'copilot' || (driver.role === 'driver' && state.driver_copilot) ? ' <span role="img" aria-label="Co-pilot" title="Co-pilot">\u{1f52d}</span>' : ''}`, redbullSeconds = Number(driver.active_effects?.redbull || 0), redbullStatus = redbullSeconds > 0 ? ` | \u{1f964} ${duration(redbullSeconds)} protected` : '', degradation = driver.fatigue > 50 ? Math.min(50, driver.fatigue - 50) : 0, redbullPenalty = (driver.redbull_penalties || []).reduce((sum, penalty) => sum + Number(penalty.amount || 0), 0), effectiveDriving = (Math.max(0, Number(driver.driving) - redbullPenalty) * (1 - degradation / 100)).toFixed(0), effectiveCopilot = degradation ? (driver.copilot * (1 - degradation / 100)).toFixed(0) : driver.copilot; return `<article class="driver-card"><header><strong>${escape(driver.name)}${roleIcons}</strong><span>${escape(role.replace('_', ' '))}</span></header><div class="driver-stats"><small><span>Endurance</span><strong>${driver.endurance}</strong></small><small><span>Driving${degradation ? ` <em>Fatigue -${degradation.toFixed(0)}%</em>` : ''}${redbullPenalty ? ` <em>RedBull -${redbullPenalty.toFixed(0)} pts</em>` : ''}</span><strong>${effectiveDriving}</strong></small><small><span>Co-piloting${degradation ? ` <em>-${degradation.toFixed(0)}%</em>` : ''}</span><strong>${effectiveCopilot}</strong></small></div><div class="fatigue-track"><i style="width:${driver.fatigue}%;background:${driver.fatigue >= 75 ? 'var(--red)' : driver.fatigue >= 50 ? '#f0b429' : 'var(--green)'}"></i></div><small>${driver.fatigue.toFixed(1)}% fatigue${driver.locked_rest ? ' | REST REQUIRED' : ''}${redbullStatus}</small></article>`; }).join('');
     const copilotSelect = document.getElementById('copilot-control'), driver = state.drivers.find(item => item.role === 'driver'), copilot = state.driver_copilot ? driver : state.drivers.find(item => item.role === 'copilot'), availableAlternative = state.drivers.some(item => item.id !== driver?.id && !item.locked_rest && item.fatigue < 100); if (document.activeElement !== copilotSelect) { copilotSelect.innerHTML = '<option value="">None</option>' + state.drivers.map(item => { const driverUnavailable = item.id === driver?.id && state.drivers.length > 1 && availableAlternative; return `<option value="${escape(item.id)}" ${copilot && copilot.id === item.id ? 'selected' : ''} ${item.locked_rest || driverUnavailable ? 'disabled' : ''}>${escape(item.name)}</option>`; }).join(''); }
     const ended = ['completed', 'failed'].includes(simulation.status), decisionPending = ['event', 'confirmation', 'driver'].includes(state.pending_decision?.type), pause = document.getElementById('pause-action'); pause.textContent = simulation.status === 'paused' && !decisionPending ? 'Resume' : 'Pause'; pause.disabled = !canControl || ended || decisionPending || !['running', 'paused'].includes(simulation.status); document.getElementById('driver-action').disabled = !canControl || simulation.status !== 'running' || decisionPending || !availableAlternative; document.getElementById('fuel-action').disabled = !canControl || simulation.status !== 'running' || decisionPending; document.getElementById('consumable-action').disabled = !canControl || simulation.status !== 'running' || decisionPending || !Object.values(state.consumables || {}).some(item => Number(item.remaining) > 0); const consumableDialog = document.getElementById('consumable-dialog'); if ((decisionPending || ended) && consumableDialog.open) consumableDialog.close(); document.getElementById('speed-control').disabled = !canControl || Boolean(state.roadside_rest) || decisionPending; document.getElementById('copilot-control').disabled = !canControl || Boolean(state.roadside_rest) || decisionPending;
@@ -278,5 +312,7 @@
   async function refresh() { if (polling) return; polling = true; let terminal = false; try { const response = await fetch(`/simulator/${config.id}/status?after=${lastEvent}`, {cache: 'no-store'}); if (!response.ok) throw new Error('Simulation unavailable'); const simulation = await response.json(); terminal = ['completed', 'failed'].includes(simulation.status); if (errorNode.dataset.source === 'poll') errorNode.hidden = true; render(simulation); addEvents(simulation.events || []); } catch (error) { errorNode.dataset.source = 'poll'; errorNode.textContent = error.message; errorNode.hidden = false; } finally { polling = false; clearTimeout(pollTimer); pollTimer = terminal ? null : setTimeout(refresh, 1000); } }
   document.getElementById('speed-control').addEventListener('input', event => { clearTimeout(speedTimer); const input = event.currentTarget, speed = input.value.trim(), numericSpeed = Number(speed); input.setAttribute('aria-invalid', 'false'); if (!/^\d{2,3}$/.test(speed) || numericSpeed < 20 || numericSpeed > 250) { input.setAttribute('aria-invalid', 'true'); return; } speedTimer = setTimeout(() => act('target_speed', {speed: numericSpeed}), 1000); }); document.getElementById('copilot-control').addEventListener('change', event => act('copilot', {copilot: event.currentTarget.value})); document.getElementById('pause-action').addEventListener('click', () => act(currentStatus === 'paused' ? 'resume' : 'pause')); document.getElementById('driver-action').addEventListener('click', () => act('request_driver_change')); document.getElementById('fuel-action').addEventListener('click', () => act('fuel')); document.getElementById('consumable-action').addEventListener('click', openConsumables); document.getElementById('consumable-cancel').addEventListener('click', () => document.getElementById('consumable-dialog').close());
   document.getElementById('print-summary').addEventListener('click', () => window.print());
+  document.getElementById('map-segment-previous').addEventListener('click', () => { if (!latestState) return; const count = (latestState.traveled_segments || []).length + (latestState.current_segment?.polyline ? 1 : 0), current = mapHistoryIndex === null ? count - 1 : mapHistoryIndex; mapHistoryIndex = Math.max(0, current - 1); if (latestSimulation) render(latestSimulation); });
+  document.getElementById('map-segment-next').addEventListener('click', () => { if (!latestState) return; const latest = (latestState.traveled_segments || []).length + (latestState.current_segment?.polyline ? 1 : 0) - 1, current = mapHistoryIndex === null ? latest : mapHistoryIndex; mapHistoryIndex = current + 1 >= latest ? null : current + 1; if (latestSimulation) render(latestSimulation); });
   refresh();
 })();

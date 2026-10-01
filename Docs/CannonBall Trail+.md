@@ -88,9 +88,11 @@ paused and resumed without keeping the browser open.
 The live map reuses overview polylines already stored by the collector and does
 not make additional Google requests. A bundled, coordinate-rounded subset of
 the U.S. Census Bureau's 2025 state cartographic boundaries supplies geographic
-context without runtime network requests. Untraveled geometry is gray. Traveled
-geometry is colored from red at zero speed to green at the target speed, and
-the final summary joins the stored polylines for every segment traveled. Fuel
+context without runtime network requests. The live view labels visible states,
+and its arrow controls can revisit completed segment maps without changing the
+simulation. Untraveled geometry is gray. Traveled geometry is colored from red
+at zero speed to green at the target speed, and the final summary joins the
+stored polylines for every segment traveled. Fuel
 stops, driver changes, police encounters, flat tires, road obstacles, and each
 weather condition are retained as distinct symbols on both maps.
 
