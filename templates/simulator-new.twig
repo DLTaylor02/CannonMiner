@@ -17,7 +17,7 @@
 <label class="equipment-option"><input type="checkbox" name="radar_jammer" value="yes" disabled><i aria-hidden="true"></i><span><strong>&#x1f6e1;&#xfe0f; Radar Jammer</strong><small>Requires Radar Scanner; active police countermeasure | $1,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="police_camo" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f46e; Police Camo</strong><small>Make the car look like an undercover cop car | $1,000</small></span></label>
 <label class="equipment-option"><input type="checkbox" name="thermal_camera" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f321;&#xfe0f; Thermal Camera</strong><small>Detects wildlife; limits the vehicle to 65 mph for 1 mile instead of crashing | $500</small></span></label>
-<label class="equipment-option"><input type="checkbox" name="redbull_cooler" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f964; Cooler full of RedBull</strong><small>6 drinks; 2-hour fatigue protection, with driving penalties after the second | $35</small></span></label>
+<label class="equipment-option"><input type="checkbox" name="redbull_cooler" value="yes"><i aria-hidden="true"></i><span><strong>&#x1f964; Cooler full of RedBull</strong><small>6 drinks; 2-hour fatigue protection, with The jitters after the second | $35</small></span></label>
 </div><div class="equipment-summary"><div><p class="kicker">Modifiers</p><ul id="equipment-modifiers"><li>No equipment modifiers</li></ul></div><div><span>Total equipment cost</span><strong id="equipment-cost">$0</strong></div></div></fieldset>
 <button id="begin-simulation" class="simulator-primary">Begin simulation</button></form>
 <dialog id="setup-speed-warning-120"><div class="decision-heading"><p class="kicker">High-speed warning</p><h2>The road just got serious</h2></div><p>This car can now run beyond 120 mph. The scenery is blurring, the fuel gauge is nervous, and one bad roll can end the party before Portofino. The chance of a crash has increased.</p><div class="decision-options"><button class="decision-ok" type="button">I understand</button></div></dialog>
@@ -141,7 +141,7 @@ function syncEquipment() {
   if (jammerInput.checked) modifiers.push('Radar Jammer police response');
   if (policeCamoInput.checked) modifiers.push('Traffic moves aside; every police stop ends the run');
   if (thermalCameraInput.checked) modifiers.push('Wildlife detected; 1 mile at 65 mph instead of a collision');
-  if (redbullCoolerInput.checked) modifiers.push('6 RedBulls; 2 hours without fatigue gain per drink; driving penalties on drinks 3 and 4');
+  if (redbullCoolerInput.checked) modifiers.push('6 RedBulls; 2 hours without fatigue gain per drink; The jitters on drinks 3 and 4');
   if (snacks) modifiers.push(`${snacks} snack${snacks === 1 ? '' : 's'}; each restores 5% fatigue`);
   document.getElementById('equipment-modifiers').innerHTML = (modifiers.length ? modifiers : ['No equipment modifiers'])
     .map(item => `<li>${item}</li>`).join('');

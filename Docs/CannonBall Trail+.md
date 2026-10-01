@@ -37,8 +37,8 @@ rating to 1% for that simulation.
 The $35 Cooler full of RedBull costs 25 load by default and contains six drinks.
 Using a drink on a crew member prevents fatigue gain for two in-game hours;
 resting recovery still works normally. Each crew member may consume at most four
-drinks per run. A third drink temporarily removes 10 driving-skill points, and a
-fourth temporarily removes another 20 points. Each penalty clears independently
+drinks per run. A third drink causes The jitters and temporarily removes 10
+driving-skill points, while a fourth removes another 20 points. Each effect clears independently
 after the crew member recovers 50 fatigue points. Rejected fifth drinks remain
 in inventory. Consumable use and
 expiration pause for an acknowledgement, appear in run history, and are tracked
