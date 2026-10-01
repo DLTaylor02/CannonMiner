@@ -13,4 +13,4 @@ agreement or permission for CannonMiner's historical-storage use case. See
 `THIRD_PARTY_NOTICES.md` before enabling collection.
 
 Composer dependencies retain their own licenses in `vendor/`. Setup generates
-the exact resolved inventory at `var/composer-licenses.json`.
+the exact resolved inventory at `var/composer-licenses.json`. 
