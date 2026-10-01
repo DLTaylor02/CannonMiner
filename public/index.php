@@ -369,7 +369,7 @@ $app->get('/simulator/{id}/status',function(Request $request,Response $response,
     if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();$after=max(0,(int)($request->getQueryParams()['after']??0));
     $statement=$pdo->prepare('SELECT id,status,mode,departure_at,simulated_at,state,version,finished_at FROM simulations WHERE id=?');$statement->execute([$args['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
-    $simulation['state']=json_decode((string)$simulation['state'],true);$events=$pdo->prepare('SELECT id,simulated_at,type,payload FROM simulation_events WHERE simulation_id=? AND id>? ORDER BY id LIMIT 250');$events->execute([$args['id'],$after]);$simulation['events']=$events->fetchAll();foreach($simulation['events'] as &$event)$event['payload']=json_decode((string)$event['payload'],true);unset($event);
+    $simulation['state']=json_decode((string)$simulation['state'],true);if(!empty($simulation['state']['fuel_stop_pending']))$simulation['state']['fuel_stop_pending']=true;$events=$pdo->prepare('SELECT id,simulated_at,type,payload FROM simulation_events WHERE simulation_id=? AND id>? ORDER BY id LIMIT 250');$events->execute([$args['id'],$after]);$simulation['events']=$events->fetchAll();foreach($simulation['events'] as &$event)$event['payload']=json_decode((string)$event['payload'],true);unset($event);
     $response->getBody()->write(json_encode($simulation,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
 

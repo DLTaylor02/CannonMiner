@@ -96,7 +96,10 @@ stored polylines for every segment traveled. Fuel
 stops, driver changes, police encounters, flat tires, road obstacles, and each
 weather condition are retained as distinct symbols on both maps.
 
-Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
+Requesting fuel pauses for confirmation, then sends the crew toward a nearby
+station at an undisclosed distance. The search persists across
+segment boundaries, and the stop begins only when the vehicle reaches the
+station. Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
 when the crew's average effective co-piloting skill is 50 or lower. It scales
 linearly from 5 GPM at an average of 50 to 16 GPM at the maximum average of
 100. Vehicle
