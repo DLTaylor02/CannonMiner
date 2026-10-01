@@ -1,6 +1,6 @@
 {% extends 'layout.twig' %}{% block title %}New Simulation | CannonMiner{% endblock %}{% block content %}
 <section class="page-head"><div><p class="kicker">CannonBall Trail+</p><h1>New Simulation</h1></div><p>Choose the car and crew. Your own driver is mandatory; select up to two additional drivers.</p></section>
-{% if error %}<p class="alert">{{ error }}</p>{% endif %}
+<p id="simulation-setup-error" class="alert" role="alert" aria-live="polite" tabindex="-1"{% if not error %} hidden{% endif %}>{{ error|default('') }}</p>
 <form method="post" class="simulation-setup"><input type="hidden" name="_token" value="{{ csrf }}">
 <fieldset><legend>Run</legend><div class="settings-grid"><label>Departure date and time <span>New York time</span><input type="datetime-local" name="departure" value="{{ default_departure }}" required></label><label>Simulation speed<select name="mode"><option value="arcade">Arcade | 1 hour = 1 minute</option><option value="realtime">Realtime | 1 minute = 1 minute</option></select></label><label>Initial target speed <span>mph</span><input type="number" name="speed" min="20" max="250" step="1" value="110" required></label><label class="equipment-option run-minigames"><input type="checkbox" name="minigames" value="yes" checked><i aria-hidden="true"></i><span><strong>Minigames</strong><small>Play interactive event sequences during the simulation</small></span></label></div></fieldset>
 <fieldset><legend>Drivers</legend><div class="driver-roster">{% for driver in roster %}<label class="driver-option {{ driver.required?'required':'' }}">{% if not driver.required %}<input type="checkbox" name="drivers[]" value="{{ driver.id }}"><i aria-hidden="true"></i>{% endif %}<span><strong>{{ driver.name }}{% if driver.required %} | You{% endif %}</strong><small>Endurance {{ driver.endurance }} | Driving {{ driver.driving }} | Co-piloting {{ driver.copilot }}</small></span></label>{% endfor %}</div><label class="initial-driver">Initial driver<select name="initial_driver" required>{% for driver in roster %}<option value="{{ driver.id }}" data-optional="{{ driver.required?'no':'yes' }}" {{ driver.required?'selected':'disabled' }}>{{ driver.name }}{% if driver.required %} (you){% endif %}</option>{% endfor %}</select></label><a class="result-tool-link" href="?regenerate=1">Generate another roster</a></fieldset>
@@ -55,6 +55,8 @@ const loadCosts = {{ load_costs|json_encode|raw }};
 const setupForm = document.querySelector('.simulation-setup');
 const beginSimulation = document.getElementById('begin-simulation');
 const carSelection = document.getElementById('car-selection');
+const departureInput = document.querySelector('[name=departure]');
+const setupError = document.getElementById('simulation-setup-error');
 
 function syncLoad() {
   const car = carSelector.selectedOptions[0];
@@ -249,6 +251,31 @@ function blockOverloadedSimulation(event) {
 }
 beginSimulation.addEventListener('click', blockOverloadedSimulation);
 setupForm.addEventListener('submit', blockOverloadedSimulation);
+setupForm.addEventListener('submit', async event => {
+  if (event.defaultPrevented) return;
+  event.preventDefault();
+  beginSimulation.disabled = true;
+  try {
+    const response = await fetch(`/simulator/departure-support?departure=${encodeURIComponent(departureInput.value)}`, {cache: 'no-store'});
+    if (!response.ok) throw new Error('Unable to validate the selected departure date.');
+    const result = await response.json();
+    if (result.supported) {
+      setupForm.submit();
+      return;
+    }
+    setupError.textContent = 'No directly supported traffic data is available for the selected departure day. Choose another date.';
+    setupError.hidden = false;
+    setupError.scrollIntoView({behavior: 'smooth', block: 'start'});
+    setupError.focus({preventScroll: true});
+  } catch (error) {
+    setupError.textContent = error.message;
+    setupError.hidden = false;
+    setupError.scrollIntoView({behavior: 'smooth', block: 'start'});
+  } finally {
+    beginSimulation.disabled = false;
+  }
+});
+departureInput.addEventListener('input', () => { setupError.hidden = true; });
 syncDrivers();
 syncEquipment();
 </script>

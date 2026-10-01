@@ -359,6 +359,10 @@ $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $re
     return$render($request,$response,'simulator-new.twig',['roster'=>$roster,'cars'=>$simulator->cars(),'load_costs'=>$simulator->loadCosts(),'default_departure'=>$defaultDeparture,'error'=>$error,'csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
+$app->get('/simulator/departure-support',function(Request $request,Response $response)use($simulator):Response{
+    $departure=(string)($request->getQueryParams()['departure']??'');$response->getBody()->write(json_encode(['supported'=>$simulator->supportsDeparture($departure)],JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
+})->add($guard);
+
 $app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
     if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     $statement=$pdo->prepare('SELECT s.id,s.user_id,s.status,s.mode,s.created_at,u.username FROM simulations s JOIN users u ON u.id=s.user_id WHERE s.id=?');$statement->execute([$args['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
