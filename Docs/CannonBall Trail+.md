@@ -16,6 +16,9 @@ and an optional
 but actual speed is capped and the live map shows a vehicle-limit status icon.
 Traffic and weather caps take priority when they impose a lower limit. Cars use
 their stock top speed until the cruising tune enables the tuned top speed.
+Interactive minigames are enabled by default and can be disabled for an
+individual simulation during setup. Disabling them skips the interactive fuel
+and tire sequences without changing their calculated delays or outcomes.
 
 The setup car builder supports up to the selected car's maximum fuel-cell count.
 Each $300 cell adds 20 gallons of capacity. A $1,500 cruising tune adds 5 MPG

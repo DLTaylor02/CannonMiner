@@ -19,6 +19,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 @media(max-width:400px){.vehicle-carousel{grid-template-columns:42px minmax(150px,1fr) 42px;gap:8px}.vehicle-carousel-arrow{width:42px;height:42px}.vehicle-carousel-selection>strong{font-size:18px}}
 .simulation-setup fieldset{margin:0;padding:18px;border:1px solid var(--line);background:var(--white)}
 .simulation-setup legend{padding:0 10px;font-size:20px;font-weight:750}
+.run-minigames{align-self:end}
 .equipment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .equipment-stepper,.equipment-option{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:66px;padding:12px;border:1px solid var(--line);background:var(--paper)}
 .equipment-stepper>div:first-child,.equipment-option>span{display:grid;gap:3px}.equipment-stepper span,.equipment-option small{color:var(--muted);font-size:12px}
