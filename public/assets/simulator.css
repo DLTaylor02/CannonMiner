@@ -19,6 +19,7 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 @media(max-width:400px){.vehicle-carousel{grid-template-columns:42px minmax(150px,1fr) 42px;gap:8px}.vehicle-carousel-arrow{width:42px;height:42px}.vehicle-carousel-selection>strong{font-size:18px}}
 .simulation-setup fieldset{margin:0;padding:18px;border:1px solid var(--line);background:var(--white)}
 .simulation-setup legend{padding:0 10px;font-size:20px;font-weight:750}
+.run-minigames{align-self:end}
 .equipment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .equipment-stepper,.equipment-option{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:66px;padding:12px;border:1px solid var(--line);background:var(--paper)}
 .equipment-stepper>div:first-child,.equipment-option>span{display:grid;gap:3px}.equipment-stepper span,.equipment-option small{color:var(--muted);font-size:12px}
@@ -38,7 +39,10 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .driver-option small{color:var(--muted)}
 .simulation-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.5fr);gap:20px}
 .simulator-map-panel{position:relative;display:flex;min-width:0;flex-direction:column;border:1px solid var(--line);background:#111}
+.simulation-map-stage{position:relative;min-width:0;flex:1}
 .simulator-map-panel canvas{display:block;width:100%;height:auto;min-height:0;aspect-ratio:16/8.3}
+.simulation-map-stage #fuel-minigame,.simulation-map-stage #tire-minigame{position:absolute;inset:0;z-index:5;width:100%;height:100%;background:#101713;cursor:default;touch-action:none}
+.simulation-map-stage #fuel-minigame[hidden],.simulation-map-stage #tire-minigame[hidden]{display:none}
 .simulator-location{position:static;display:grid;flex:0 0 auto;padding:9px 11px;background:rgba(10,14,12,.96);color:#fff}
 .simulation-location-row{display:grid;grid-template-columns:32px minmax(0,1fr) 32px;align-items:center;gap:9px}
 .simulation-location-row strong{text-align:center;overflow-wrap:anywhere}
@@ -70,6 +74,8 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
 .simulation-controls,.simulation-log{grid-column:1/-1}
 .simulation-controls form{display:grid;grid-template-columns:1fr auto;align-items:end;gap:10px;margin-bottom:13px}
 .simulation-actions{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:13px}
+.simulation-debug-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:0 0 13px;padding:10px;border:1px dashed var(--line);background:var(--paper)}
+.simulation-debug-actions span{color:var(--muted);font-size:10px;font-weight:750;text-transform:uppercase}
 .simulation-page button:disabled,.simulation-page button:disabled:hover{border-color:var(--line);background:var(--paper);color:var(--muted);opacity:.65;cursor:not-allowed;filter:none;box-shadow:none}
 .simulation-controls>label:first-of-type{display:block;margin-bottom:14px}
 .control-note{color:var(--muted);font-size:12px}
@@ -102,7 +108,8 @@ header{position:sticky;top:0;z-index:20;gap:12px;overflow:visible}
   .simulation-page .simulator-head small{color:var(--muted);font-size:11px}
   .simulation-page .simulation-grid{position:relative;height:calc(100vh - 164px);grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:minmax(0,1.08fr) minmax(0,.92fr);gap:12px}
   .simulation-page .simulator-map-panel{grid-column:1/9;grid-row:1}
-  .simulation-page .simulator-map-panel canvas{width:100%;height:auto;flex:1;aspect-ratio:auto}
+  .simulation-page .simulation-map-stage{min-height:0}
+  .simulation-page .simulation-map-stage #simulation-map{width:100%;height:100%;aspect-ratio:auto}
   .simulation-page .simulator-instruments{grid-column:9/13;grid-row:1}
   .simulation-page .instrument{min-height:0}
   .simulation-page .simulation-controls{grid-column:1/5;grid-row:2}

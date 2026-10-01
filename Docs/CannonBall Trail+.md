@@ -16,6 +16,9 @@ and an optional
 but actual speed is capped and the live map shows a vehicle-limit status icon.
 Traffic and weather caps take priority when they impose a lower limit. Cars use
 their stock top speed until the cruising tune enables the tuned top speed.
+Interactive minigames are enabled by default and can be disabled for an
+individual simulation during setup. Disabling them skips the interactive fuel
+and tire sequences without changing their calculated delays or outcomes.
 
 The setup car builder supports up to the selected car's maximum fuel-cell count.
 Each $300 cell adds 20 gallons of capacity. A $1,500 cruising tune adds 5 MPG
@@ -99,7 +102,11 @@ weather condition are retained as distinct symbols on both maps.
 Requesting fuel pauses for confirmation, then sends the crew toward a nearby
 station at an undisclosed distance. The search persists across
 segment boundaries, and the stop begins only when the vehicle reaches the
-station. Fuel stops use a 60-second payment step. Fuel flows at a base rate of 5 GPM
+station. At the pump, a saved canvas minigame has the player move the payment
+card, complete the pump prompt, connect the nozzle, wait for filling, and return
+the nozzle. Refreshing the page restores the current minigame phase. This
+interaction does not alter elapsed time: fuel stops retain the same calculated
+slowdown, 60-second payment step, fill time, and acceleration. Fuel flows at a base rate of 5 GPM
 when the crew's average effective co-piloting skill is 50 or lower. It scales
 linearly from 5 GPM at an average of 50 to 16 GPM at the maximum average of
 100. Vehicle
@@ -121,7 +128,11 @@ impact. A flat tire includes controlled deceleration and acceleration around a
 10-to-15-minute repair. Repair time uses the entire crew's average effective
 co-piloting skill at the time of the flat, including fatigue reductions. The
 first flat is repairable; subsequent flats end the run once the standard spare
-and any equipped Additional Spare have been consumed. Police
+and any equipped Additional Spare have been consumed. A repairable flat opens
+an interactive tire-change sequence before the result notice. The player uses
+the jack, drill, lug nuts, damaged wheel, and spare in order. This interaction
+does not add time beyond the existing crew-skill-based flat-tire penalty.
+Police
 events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Each segment has three independently rolled event windows,

@@ -362,7 +362,7 @@ $app->map(['GET','POST'],'/simulator/new',function(Request $request,Response $re
 $app->get('/simulator/{id}',function(Request $request,Response $response,array $args)use($pdo,$render,&$identity):Response{
     if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
     $statement=$pdo->prepare('SELECT s.id,s.user_id,s.status,s.mode,s.created_at,u.username FROM simulations s JOIN users u ON u.id=s.user_id WHERE s.id=?');$statement->execute([$args['id']]);$simulation=$statement->fetch();if(!$simulation)return$response->withStatus(404);
-    return$render($request,$response,'simulation.twig',['simulation'=>$simulation,'can_control'=>(int)$simulation['user_id']===(int)$identity['id'],'csrf'=>$_SESSION['csrf']]);
+    return$render($request,$response,'simulation.twig',['simulation'=>$simulation,'can_control'=>(int)$simulation['user_id']===(int)$identity['id'],'is_superadmin'=>$identity['role']==='superadmin','csrf'=>$_SESSION['csrf']]);
 })->add($guard);
 
 $app->get('/simulator/{id}/status',function(Request $request,Response $response,array $args)use($pdo,&$identity):Response{
@@ -375,7 +375,7 @@ $app->get('/simulator/{id}/status',function(Request $request,Response $response,
 
 $app->post('/simulator/{id}/action',function(Request $request,Response $response,array $args)use($simulator,$csrf,&$identity):Response{
     if(!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D',(string)$args['id']))return$response->withStatus(404);
-    try{$csrf($request);$body=(array)$request->getParsedBody();$simulator->act((string)$args['id'],(int)$identity['id'],(string)($body['action']??''),$body);$payload=['ok'=>true];}
+    try{$csrf($request);$body=(array)$request->getParsedBody();$simulator->act((string)$args['id'],(int)$identity['id'],(string)($body['action']??''),$body,$identity['role']==='superadmin');$payload=['ok'=>true];}
     catch(Throwable $exception){$payload=['ok'=>false,'error'=>$exception->getMessage()];$response=$response->withStatus(422);}
     $response->getBody()->write(json_encode($payload,JSON_THROW_ON_ERROR));return$response->withHeader('Content-Type','application/json')->withHeader('Cache-Control','private, no-store');
 })->add($guard);
