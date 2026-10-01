@@ -125,7 +125,11 @@ impact. A flat tire includes controlled deceleration and acceleration around a
 10-to-15-minute repair. Repair time uses the entire crew's average effective
 co-piloting skill at the time of the flat, including fatigue reductions. The
 first flat is repairable; subsequent flats end the run once the standard spare
-and any equipped Additional Spare have been consumed. Police
+and any equipped Additional Spare have been consumed. A repairable flat opens
+an interactive tire-change sequence before the result notice. The player uses
+the jack, drill, lug nuts, damaged wheel, and spare in order. This interaction
+does not add time beyond the existing crew-skill-based flat-tire penalty.
+Police
 events occur only above 70 mph; a stop has an equal
 chance of adding 30 minutes or ending the run because the crew was taken to
 jail. Each segment has three independently rolled event windows,
