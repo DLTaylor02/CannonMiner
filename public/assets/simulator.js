@@ -330,7 +330,12 @@
   const inside = (point, box) => point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h;
   const fuelPoint = event => { const bounds = fuelGameCanvas.getBoundingClientRect(); return {x:(event.clientX - bounds.left) * fuelGameCanvas.width / bounds.width,y:(event.clientY - bounds.top) * fuelGameCanvas.height / bounds.height}; };
   function fuelCardPosition(phase) { if (fuelDrag?.kind === 'card') return fuelDrag.position; return phase === 'return_card' ? {x:762,y:172} : {x:88,y:382}; }
-  function fuelNozzlePosition(phase) { if (fuelDrag?.kind === 'nozzle') return fuelDrag.position; return ['fueling','return_nozzle'].includes(phase) ? {x:520,y:335} : {x:835,y:323}; }
+  function fuelNozzlePosition(phase) {
+    if (fuelDrag?.kind === 'nozzle') return fuelDrag.position;
+    if (fuelInteractionPending && phase === 'connect_nozzle') return {x:520,y:335};
+    if (fuelInteractionPending && phase === 'return_nozzle') return {x:835,y:323};
+    return ['fueling','return_nozzle'].includes(phase) ? {x:520,y:335} : {x:835,y:323};
+  }
 
   function drawFuelMinigame() {
     if (!fuelGameState || fuelGameCanvas.hidden) return;
