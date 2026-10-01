@@ -18,6 +18,9 @@
   let latestSimulation = null;
   let stateBoundaries = null;
   let mapHistoryIndex = null;
+  let pollCount = 0;
+  const liveMapLayers = new Map();
+  if (typeof performance.setResourceTimingBufferSize === 'function') performance.setResourceTimingBufferSize(150);
   const fmt = new Intl.DateTimeFormat(undefined, {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short'});
   const newYorkFmt = new Intl.DateTimeFormat(undefined, {weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short'});
   const daylightStatus = value => { const hour = value.getHours(); if (hour >= 5 && hour < 8) return {icon: '\u{1f305}', label: 'Sunrise'}; if (hour >= 8 && hour < 17) return {icon: '\u2600\ufe0f', label: 'Daylight'}; if (hour >= 17 && hour < 20) return {icon: '\u{1f307}', label: 'Sunset'}; return {icon: '\u{1f319}', label: 'Night'}; };
@@ -29,7 +32,7 @@
   const eventSymbol = (type, payload = {}) => { if (['consumable_used', 'consumable_rejected', 'consumable_wore_off'].includes(type)) return payload.consumable === 'snack' ? '\u{1f37f}' : '\u{1f964}'; if (type === 'weather_event') return mapEventSymbols[`weather_${payload.weather}`] || ''; if (type === 'driver_changed' || type === 'driver_change_complete') return mapEventSymbols.driver_change; if (type === 'traffic_delay' || type === 'traffic_cap_lifted') return mapEventSymbols.traffic_event; if (type === 'invented_traffic_cleared' || type === 'event_acknowledged') return mapEventSymbols.obstacle_response; if (type === 'flat_tire_ended_run') return mapEventSymbols.flat_tire; if (type === 'mechanical_failure_ended_run') return mapEventSymbols.mechanical_failure; if (type === 'crew_jailed') return mapEventSymbols.police_event; return mapEventSymbols[type] || ''; };
   const locationName = node => locations[node] || String(node).replaceAll('_', ' ');
   const routeName = name => String(name).split('_to_').map(locationName).join(' to ');
-  fetch('/assets/data/us-states-20m.json', {cache: 'force-cache'}).then(response => { if (!response.ok) throw new Error('State map unavailable'); return response.json(); }).then(data => { stateBoundaries = data.states || []; if (latestState) { renderLiveMap(latestState); if (!document.getElementById('simulation-summary').hidden) drawSummaryMap(latestState); } }).catch(() => {});
+  fetch('/assets/data/us-states-20m.json', {cache: 'force-cache'}).then(response => { if (!response.ok) throw new Error('State map unavailable'); return response.json(); }).then(data => { stateBoundaries = data.states || []; liveMapLayers.clear(); if (latestState) { renderLiveMap(latestState); if (!document.getElementById('simulation-summary').hidden) drawSummaryMap(latestState); } }).catch(() => {});
   const equipmentMarkup = (equipment, consumables = {}) => { const items = [], cells = Number(equipment?.fuel_cells || 0); if (cells) items.push({icon: '\u26fd', text: `${cells} fuel cell${cells === 1 ? '' : 's'}: +${cells * 20} gal capacity`, quantity: cells}); if (equipment?.cruising_tune) items.push({icon: '\u{1f6e0}\ufe0f', text: 'Cruising tune: +5 MPG above 70 mph; tuned top speed unlocked'}); if (equipment?.tuned_up) items.push({icon: '\u{1f527}', text: 'Tuned up: Lemon rating reduced to 1%'}); if (equipment?.cruising_tires) items.push({icon: '\u25c9', text: 'Cruising tires: +1 MPG; flat-tire chance reduced 50%'}); if (equipment?.additional_spare && !equipment?.additional_spare_consumed) items.push({icon: '\u{1f9f0}', text: 'Additional Spare: one additional recoverable flat tire'}); if (equipment?.radio_scanner) items.push({icon: '\u{1f4fb}', text: 'Radio Scanner: early warning police response'}); if (equipment?.radar_scanner) items.push({icon: '\u{1f4e1}', text: 'Radar Scanner: police encounter chance reduced 50%'}); if (equipment?.radar_jammer) items.push({icon: '\u{1f6e1}\ufe0f', text: 'Radar Jammer: active police countermeasure'}); if (equipment?.police_camo) items.push({icon: '\u{1f46e}', text: 'Police Camo: traffic moves aside; every police stop ends the run'}); if (equipment?.thermal_camera) items.push({icon: '\u{1f321}\ufe0f', text: 'Thermal Camera: wildlife detection prevents a collision'}); if (equipment?.redbull_cooler) items.push({icon: '\u{1f964}', text: `RedBull cooler: ${Number(consumables?.redbull?.remaining || 0)} of 6 remaining`}); if (Number(equipment?.snacks || 0) > 0) items.push({icon: '\u{1f37f}', text: `Snacks: ${Number(consumables?.snack?.remaining || 0)} of ${Number(equipment.snacks)} remaining`}); return items.length ? items.map(item => `<span class="${item.quantity > 1 ? 'equipment-stack' : ''}" tabindex="0" title="${escape(item.text)}" aria-label="${escape(item.text)}"><i aria-hidden="true">${item.icon}</i>${item.quantity > 1 ? `<b aria-hidden="true">x${item.quantity}</b>` : ''}</span>`).join('') : 'None'; };
   const equipmentSummary = equipment => { const items = [], cells = Number(equipment?.fuel_cells || 0); if (cells) items.push({icon: '\u26fd', text: `${cells} fuel cell${cells === 1 ? '' : 's'}`}); if (equipment?.cruising_tune) items.push({icon: '\u{1f6e0}\ufe0f', text: 'Cruising tune'}); if (equipment?.tuned_up) items.push({icon: '\u{1f527}', text: 'Tuned up'}); if (equipment?.cruising_tires) items.push({icon: '\u25c9', text: 'Cruising tires'}); if (equipment?.additional_spare) items.push({icon: '\u{1f9f0}', text: 'Additional Spare'}); if (equipment?.radio_scanner) items.push({icon: '\u{1f4fb}', text: 'Radio Scanner'}); if (equipment?.radar_scanner) items.push({icon: '\u{1f4e1}', text: 'Radar Scanner'}); if (equipment?.radar_jammer) items.push({icon: '\u{1f6e1}\ufe0f', text: 'Radar Jammer'}); if (equipment?.police_camo) items.push({icon: '\u{1f46e}', text: 'Police Camo'}); if (equipment?.thermal_camera) items.push({icon: '\u{1f321}\ufe0f', text: 'Thermal Camera'}); if (equipment?.redbull_cooler) items.push({icon: '\u{1f964}', text: 'Cooler full of RedBull'}); if (Number(equipment?.snacks || 0) > 0) items.push({icon: '\u{1f37f}', text: `${Number(equipment.snacks)} snack${Number(equipment.snacks) === 1 ? '' : 's'}`}); return items; };
 
@@ -178,16 +181,31 @@
     });
   }
 
-  function drawMap(segment, showVehicle = true) {
-    context.fillStyle = '#101713'; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = 'rgba(255,255,255,.06)'; context.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 50) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, canvas.height); context.stroke(); }
-    for (let y = 0; y < canvas.height; y += 50) { context.beginPath(); context.moveTo(0, y); context.lineTo(canvas.width, y); context.stroke(); }
-    if (!segment || !segment.polyline) { context.fillStyle = '#aab8b0'; context.font = '24px sans-serif'; context.textAlign = 'center'; context.fillText(segment ? 'Route geometry unavailable' : 'Choose an onward segment', canvas.width / 2, canvas.height / 2); return; }
+  function paintMapBackground(target) {
+    target.fillStyle = '#101713'; target.fillRect(0, 0, target.canvas.width, target.canvas.height);
+    target.strokeStyle = 'rgba(255,255,255,.06)'; target.lineWidth = 1;
+    for (let x = 0; x < target.canvas.width; x += 50) { target.beginPath(); target.moveTo(x, 0); target.lineTo(x, target.canvas.height); target.stroke(); }
+    for (let y = 0; y < target.canvas.height; y += 50) { target.beginPath(); target.moveTo(0, y); target.lineTo(target.canvas.width, y); target.stroke(); }
+  }
+
+  function liveMapLayer(segment) {
+    const key = segment.polyline;
+    if (liveMapLayers.has(key)) return liveMapLayers.get(key);
     const points = decodePolyline(segment.polyline);
-    if (points.length < 2) return;
-    const project = routeProjection(canvas, points, 55);
-    drawStateBoundaries(context, project, true);
+    if (points.length < 2) return null;
+    const background = document.createElement('canvas'); background.width = canvas.width; background.height = canvas.height;
+    const backgroundContext = background.getContext('2d'), project = routeProjection(background, points, 55);
+    paintMapBackground(backgroundContext); drawStateBoundaries(backgroundContext, project, true);
+    const layer = {background, points, project}; liveMapLayers.set(key, layer);
+    if (liveMapLayers.size > 12) liveMapLayers.delete(liveMapLayers.keys().next().value);
+    return layer;
+  }
+
+  function drawMap(segment, showVehicle = true) {
+    if (!segment || !segment.polyline) { paintMapBackground(context); context.fillStyle = '#aab8b0'; context.font = '24px sans-serif'; context.textAlign = 'center'; context.fillText(segment ? 'Route geometry unavailable' : 'Choose an onward segment', canvas.width / 2, canvas.height / 2); return; }
+    const layer = liveMapLayer(segment);
+    if (!layer) return;
+    const {background, points, project} = layer; context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(background, 0, 0);
     strokeRange(context, points, project, 0, 1, '#66706b');
     (segment.speed_trace || []).forEach(band => strokeRange(context, points, project, Number(band.from), Number(band.to), speedColor(band.ratio)));
     drawMapEvents(context, points, project, segment.map_events, -25);
@@ -340,10 +358,11 @@
   }
 
   async function act(action, payload = {}) { errorNode.hidden = true; const body = new URLSearchParams({_token: config.csrf, action, ...payload}); try { const response = await fetch(`/simulator/${config.id}/action`, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body}); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Action failed'); await refresh(); } catch (error) { errorNode.dataset.source = 'action'; errorNode.textContent = error.message; errorNode.hidden = false; } }
-  async function refresh() { if (polling) return; polling = true; let terminal = false; try { const response = await fetch(`/simulator/${config.id}/status?after=${lastEvent}`, {cache: 'no-store'}); if (!response.ok) throw new Error('Simulation unavailable'); const simulation = await response.json(); terminal = ['completed', 'failed'].includes(simulation.status); if (errorNode.dataset.source === 'poll') errorNode.hidden = true; render(simulation); addEvents(simulation.events || []); } catch (error) { errorNode.dataset.source = 'poll'; errorNode.textContent = error.message; errorNode.hidden = false; } finally { polling = false; clearTimeout(pollTimer); pollTimer = terminal ? null : setTimeout(refresh, 1000); } }
+  async function refresh() { if (polling) return; polling = true; let terminal = false; try { const response = await fetch(`/simulator/${config.id}/status?after=${lastEvent}`, {cache: 'no-store'}); if (!response.ok) throw new Error('Simulation unavailable'); const simulation = await response.json(); terminal = ['completed', 'failed'].includes(simulation.status); if (errorNode.dataset.source === 'poll') errorNode.hidden = true; render(simulation); addEvents(simulation.events || []); pollCount += 1; if (pollCount >= 120) { performance.clearResourceTimings?.(); pollCount = 0; } } catch (error) { errorNode.dataset.source = 'poll'; errorNode.textContent = error.message; errorNode.hidden = false; } finally { polling = false; clearTimeout(pollTimer); pollTimer = terminal ? null : setTimeout(refresh, document.hidden ? 10000 : 1000); } }
   document.getElementById('speed-control').addEventListener('input', event => { clearTimeout(speedTimer); const input = event.currentTarget, speed = input.value.trim(), numericSpeed = Number(speed); input.setAttribute('aria-invalid', 'false'); if (!/^\d{2,3}$/.test(speed) || numericSpeed < 20 || numericSpeed > 250) { input.setAttribute('aria-invalid', 'true'); return; } speedTimer = setTimeout(() => act('target_speed', {speed: numericSpeed}), 1000); }); document.getElementById('copilot-control').addEventListener('change', event => act('copilot', {copilot: event.currentTarget.value})); document.getElementById('pause-action').addEventListener('click', () => act(currentStatus === 'paused' ? 'resume' : 'pause')); document.getElementById('driver-action').addEventListener('click', () => act('request_driver_change')); document.getElementById('fuel-action').addEventListener('click', () => act('fuel')); document.getElementById('consumable-action').addEventListener('click', openConsumables); document.getElementById('consumable-cancel').addEventListener('click', () => document.getElementById('consumable-dialog').close());
   document.getElementById('print-summary').addEventListener('click', () => window.print());
   document.getElementById('map-segment-previous').addEventListener('click', () => { if (!latestState) return; const count = (latestState.traveled_segments || []).length + (latestState.current_segment?.polyline ? 1 : 0), current = mapHistoryIndex === null ? count - 1 : mapHistoryIndex; mapHistoryIndex = Math.max(0, current - 1); if (latestSimulation) render(latestSimulation); });
   document.getElementById('map-segment-next').addEventListener('click', () => { if (!latestState) return; const latest = (latestState.traveled_segments || []).length + (latestState.current_segment?.polyline ? 1 : 0) - 1, current = mapHistoryIndex === null ? latest : mapHistoryIndex; mapHistoryIndex = current + 1 >= latest ? null : current + 1; if (latestSimulation) render(latestSimulation); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && pollTimer) { clearTimeout(pollTimer); pollTimer = setTimeout(refresh, 0); } });
   refresh();
 })();
