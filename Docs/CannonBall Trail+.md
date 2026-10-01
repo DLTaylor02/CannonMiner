@@ -32,8 +32,11 @@ without a Radar Scanner. The live instrument panel represents installed
 equipment with symbols whose tooltips describe each modifier. The
 builder displays equipment modifiers and total cost without revealing base MPG.
 The $500 Thermal Camera costs 25 load by default. When wildlife enters the road,
-an unequipped crew crashes and the run ends; an equipped crew instead slows to
-65 mph for one mile while the animal clears the route. Wildlife-event chance and
+an equipped crew slows to 65 mph for one mile while the animal clears the route.
+Without the camera, the current driver's effective driving skill determines whether
+the car swerves clear: the chance scales linearly from 0% at 50 skill to 100% at
+100 skill, while skill below 50 has no chance to save the run. A failed swerve ends
+the run. Wildlife-event chance and
 the camera's load cost are configurable in the game environment.
 The $2,000 Tuned up equipment reduces the selected vehicle's effective Lemon
 rating to 1% for that simulation.
